@@ -24,6 +24,10 @@
   --danger-soft: #fde7e5;
   --ok: #1d6f52;
   --focus: #e0a100;
+  --cumple: #8a4fc4;
+  --cumple-soft: #efe4fa;
+  --aviso: #9a5b00;
+  --aviso-soft: #fbedd5;
 
   --font-display: "Bricolage Grotesque", "Atkinson Hyperlegible", system-ui, sans-serif;
   --font-body: "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -52,6 +56,10 @@
     --danger-soft: #3d1a19;
     --ok: #6fd1a6;
     --focus: #ffc94d;
+    --cumple: #c9a2f2;
+    --cumple-soft: #2e2240;
+    --aviso: #f2c069;
+    --aviso-soft: #3a2c12;
     color-scheme: dark;
   }
 }
@@ -73,6 +81,10 @@
   --danger-soft: #3d1a19;
   --ok: #6fd1a6;
   --focus: #ffc94d;
+  --cumple: #c9a2f2;
+  --cumple-soft: #2e2240;
+  --aviso: #f2c069;
+  --aviso-soft: #3a2c12;
   color-scheme: dark;
 }
 
@@ -304,6 +316,23 @@
   .opcion input { width: 1.35rem; height: 1.35rem; margin: 0.15rem 0 0; accent-color: var(--accent); }
   .opcion > span { display: grid; gap: 0.1rem; }
 
+  /* Casilla con texto, objetivo táctil grande */
+  .check {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    min-height: var(--tap);
+    padding: 0.4rem 0.8rem;
+    border: 2px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--surface);
+    cursor: pointer;
+  }
+  .check:hover { border-color: var(--muted); }
+  .check:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+  .check input { width: 1.3rem; height: 1.3rem; margin: 0; flex-shrink: 0; accent-color: var(--accent); }
+  select.input { appearance: auto; }
+
   /* Código de invitación */
   .codigo {
     font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -333,7 +362,7 @@
     padding: 0;
     max-width: 40rem;
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
   }
   .tabbar a {
     display: grid;

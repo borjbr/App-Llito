@@ -1,10 +1,21 @@
 ---
 import App from "@/layouts/App.astro";
+import ItemEvento from "@/components/ItemEvento.astro";
 import { hijosDe, listaNombres, miembrosDe } from "@/lib/familia";
+import { eventosEnRango } from "@/lib/eventos";
+import { fechaMadrid, nombreDia, sumarDias } from "@/lib/fechas";
 
 const user = Astro.locals.user!;
 const hogar = Astro.locals.hogar!;
-const [hijos, miembros] = await Promise.all([hijosDe(hogar.id), miembrosDe(hogar.id)]);
+const hoyMadrid = fechaMadrid();
+const [hijos, miembros, semana] = await Promise.all([
+  hijosDe(hogar.id),
+  miembrosDe(hogar.id),
+  eventosEnRango(hogar.id, hoyMadrid, sumarDias(hoyMadrid, 7)),
+]);
+const proximos = semana.filter((e) => !(e.tipo === "tarea" && e.completado)).slice(0, 4);
+const mapaHijos = new Map(hijos.map((h) => [h.id, h.nombre]));
+const mapaMiembros = new Map(miembros.map((m) => [m.id, { nombre: m.nombre, avatar: m.avatar }]));
 const nombres = hijos.map((h) => h.nombre);
 const bienvenida = Astro.url.searchParams.get("bienvenida");
 
@@ -51,6 +62,27 @@ const textoHijos =
       </span>
     </span>
   </a>
+
+  <section aria-labelledby="sec-proximo" class="grid gap-3">
+    <div class="flex items-baseline justify-between gap-2">
+      <h2 id="sec-proximo">Próximos días</h2>
+      <a href="/agenda" class="font-bold">Ver agenda</a>
+    </div>
+    {
+      proximos.length > 0 ? (
+        <ul class="grid gap-2 list-none p-0 m-0">
+          {proximos.map((e) => (
+            <ItemEvento evento={e} hijos={mapaHijos} miembros={mapaMiembros} volver="/" mostrarDia={nombreDia(e.dia, hoyMadrid)} />
+          ))}
+        </ul>
+      ) : (
+        <div class="card grid gap-3 justify-items-start">
+          <p class="text-muted">No hay nada apuntado para esta semana.</p>
+          <a href="/agenda/nuevo" class="btn btn-secondary">Añadir una cita o tarea</a>
+        </div>
+      )
+    }
+  </section>
 
   <section aria-labelledby="sec-secciones" class="grid gap-4">
     <h2 id="sec-secciones" class="sr-only">Secciones</h2>

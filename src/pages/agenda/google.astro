@@ -1,0 +1,175 @@
+---
+import App from "@/layouts/App.astro";
+import Campo from "@/components/Campo.astro";
+import { db } from "@/db/client";
+import { conexionGoogle, evento } from "@/db/schema";
+import { miembrosDe } from "@/lib/familia";
+import { buscarEmails } from "@/lib/emails";
+import { compartirCalendario, conexionDe, googleConfigurado, personasConAcceso, sincronizarDesdeGoogle } from "@/lib/google";
+import { eq } from "drizzle-orm";
+import { z } from "zod";
+
+const hogar = Astro.locals.hogar!;
+let errorCompartir = "";
+let emailCompartir = "";
+
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  const accion = String(form.get("accion") ?? "");
+  const c = await conexionDe(hogar.id);
+
+  if (c && accion === "sincronizar") {
+    const r = await sincronizarDesdeGoogle(hogar.id, { forzar: true });
+    return Astro.redirect(`/agenda/google?ok=${r === null ? "sync-fallo" : "sincronizado"}`, 303);
+  }
+  if (c && accion === "compartir") {
+    emailCompartir = String(form.get("email") ?? "").trim().toLowerCase();
+    const valido = z.email().safeParse(emailCompartir);
+    if (!valido.success) errorCompartir = "Escribe un correo válido.";
+    else {
+      try {
+        await compartirCalendario(c, c.calendarId, emailCompartir);
+        return Astro.redirect("/agenda/google?ok=compartido", 303);
+      } catch {
+        errorCompartir = "Google no ha podido compartirlo con ese correo. Comprueba que es una cuenta de Google.";
+      }
+    }
+  }
+  if (c && accion === "desconectar") {
+    await db.batch([
+      db.delete(conexionGoogle).where(eq(conexionGoogle.hogarId, hogar.id)),
+      db.update(evento).set({ googleId: null, sincronizado: false }).where(eq(evento.hogarId, hogar.id)),
+    ]);
+    return Astro.redirect("/agenda/google?ok=desconectado", 303);
+  }
+}
+
+const conexion = await conexionDe(hogar.id);
+const miembros = await miembrosDe(hogar.id);
+const emailsMiembros = await buscarEmails(miembros.map((m) => m.id));
+let conAcceso: string[] | null = null;
+if (conexion) {
+  try {
+    conAcceso = [conexion.cuentaEmail.toLowerCase(), ...(await personasConAcceso(conexion))];
+  } catch {
+    conAcceso = null;
+  }
+}
+const sinAcceso = conAcceso ? emailsMiembros.filter((e) => !conAcceso!.includes(e.toLowerCase())) : [];
+
+const MENSAJES_OK: Record<string, string> = {
+  conectado: "Google Calendar conectado. Hemos creado el calendario de la familia y lo hemos compartido.",
+  sincronizado: "Sincronizado.",
+  compartido: "Calendario compartido. Le llegará un correo de Google para añadirlo.",
+  desconectado: "Google Calendar desconectado. Tu agenda sigue en la app.",
+  "sync-fallo": "No se ha podido sincronizar. Mira el detalle abajo.",
+};
+const MENSAJES_ERROR: Record<string, string> = {
+  cancelado: "Has cancelado la conexión en Google. Puedes intentarlo cuando quieras.",
+  estado: "La conexión ha caducado o venía de otra pestaña. Vuelve a pulsar «Conectar».",
+  "sin-configurar": "Falta configurar las credenciales de Google en la app (GOOGLE_CLIENT_ID y GOOGLE_CLIENT_SECRET).",
+  "sin-permiso-offline": "Google no ha dado acceso permanente. Quita el acceso de App-Llito en myaccount.google.com/permissions y vuelve a conectar.",
+  "sin-calendario": "Hace falta marcar el permiso de Google Calendar en la pantalla de Google. Vuelve a conectar y acéptalo.",
+  "api-desactivada": "La API de Google Calendar no está activada en el proyecto de Google Cloud.",
+  fallo: "No se ha podido conectar con Google. Inténtalo de nuevo en un momento.",
+};
+const ok = MENSAJES_OK[Astro.url.searchParams.get("ok") ?? ""];
+const error = MENSAJES_ERROR[Astro.url.searchParams.get("error") ?? ""];
+const fmt = new Intl.DateTimeFormat("es-ES", { dateStyle: "medium", timeStyle: "short", timeZone: "Europe/Madrid" });
+---
+
+<App title="Google Calendar">
+  <header class="grid gap-2">
+    <a href="/agenda" class="btn btn-ghost justify-self-start -ml-3"><span aria-hidden="true">←</span> Agenda</a>
+    <h1>Google Calendar</h1>
+    <p class="text-muted">Todo lo que apuntéis en la agenda aparece en un calendario de Google compartido, y lo que añadáis allí aparece aquí. Los avisos os llegan como notificación de Google Calendar.</p>
+  </header>
+
+  {ok && <div class="alert alert-ok" role="status" tabindex="-1" data-foco><p>{ok}</p></div>}
+  {error && <div class="alert alert-error" role="alert" tabindex="-1" data-foco><p>{error}</p></div>}
+
+  {
+    !conexion && (
+      <section class="card grid gap-4" aria-labelledby="sec-conectar">
+        <h2 id="sec-conectar">Conectar</h2>
+        <ol class="grid gap-2 pl-5 m-0">
+          <li>Entra con la cuenta de Google de una persona del hogar.</li>
+          <li>Crearemos el calendario «{hogar.nombre}» y lo compartiremos con el resto de la familia.</li>
+          <li>Cada persona lo verá en su app de Google Calendar y recibirá los avisos.</li>
+        </ol>
+        {googleConfigurado ? (
+          <a href="/api/google/conectar" class="btn btn-primary">Conectar con Google</a>
+        ) : (
+          <p class="alert alert-error">Todavía faltan las credenciales de Google en la configuración de la app. Sigue la guía de docs/GOOGLE-CALENDAR.md.</p>
+        )}
+        <p class="hint">Google te avisará de que la app «no está verificada». Es normal en una app familiar: pulsa «Configuración avanzada» y «Ir a App-Llito».</p>
+      </section>
+    )
+  }
+
+  {
+    conexion && (
+      <>
+        <section class="card grid gap-3" aria-labelledby="sec-estado">
+          <h2 id="sec-estado">Conexión</h2>
+          <dl class="grid gap-2 m-0">
+            <div><dt class="hint">Calendario</dt><dd class="m-0 font-bold">{conexion.calendarNombre}</dd></div>
+            <div><dt class="hint">Cuenta de Google</dt><dd class="m-0 font-bold break-all">{conexion.cuentaEmail}</dd></div>
+            <div><dt class="hint">Última sincronización</dt><dd class="m-0">{conexion.ultimaSync ? fmt.format(conexion.ultimaSync) : "Todavía no"}</dd></div>
+          </dl>
+          {conexion.ultimoError && <p class="alert alert-error">{conexion.ultimoError}</p>}
+          <form method="post">
+            <input type="hidden" name="accion" value="sincronizar" />
+            <button class="btn btn-secondary" type="submit">Sincronizar ahora</button>
+          </form>
+        </section>
+
+        <section class="card grid gap-4" aria-labelledby="sec-compartir">
+          <h2 id="sec-compartir">Quién lo ve</h2>
+          {conAcceso ? (
+            <ul class="grid gap-1 list-none p-0 m-0">
+              {conAcceso.map((e) => <li class="break-all">✓ {e}</li>)}
+            </ul>
+          ) : (
+            <p class="hint">No hemos podido leer con quién está compartido.</p>
+          )}
+          {sinAcceso.map((e) => (
+            <form method="post" class="flex gap-2 items-center flex-wrap">
+              <input type="hidden" name="accion" value="compartir" />
+              <input type="hidden" name="email" value={e} />
+              <span class="break-all flex-1 min-w-0">{e} todavía no lo tiene</span>
+              <button class="btn btn-secondary" type="submit">Compartir</button>
+            </form>
+          ))}
+          <form method="post" class="grid gap-3" novalidate>
+            <input type="hidden" name="accion" value="compartir" />
+            <Campo id="email" label="Compartir con otro correo de Google" type="email" value={emailCompartir} error={errorCompartir} required={false} hint="Útil si tu pareja usa en Google un correo distinto al de la app." autocomplete="email" />
+            <button class="btn btn-secondary justify-self-start" type="submit">Compartir</button>
+          </form>
+        </section>
+
+        <section class="card grid gap-3" aria-labelledby="sec-avisos">
+          <h2 id="sec-avisos">Para que lleguen los avisos</h2>
+          <p>Cada persona, una sola vez, en su móvil:</p>
+          <ol class="grid gap-2 pl-5 m-0">
+            <li>Acepta el correo de Google «{conexion.calendarNombre} se ha compartido contigo».</li>
+            <li>Abre Google Calendar → Ajustes → «{conexion.calendarNombre}».</li>
+            <li>En «Notificaciones predeterminadas» añade, por ejemplo, «1 día antes» y «1 hora antes», y en «Notificaciones de eventos de todo el día», «El día anterior a las 20:00».</li>
+          </ol>
+          <p class="hint">Los avisos que eliges al crear cada cita se aplican a la cuenta que conectó el calendario ({conexion.cuentaEmail}); el resto recibe sus notificaciones predeterminadas.</p>
+        </section>
+
+        <form method="post" class="grid gap-2">
+          <input type="hidden" name="accion" value="desconectar" />
+          <p class="hint">Si desconectas, la agenda sigue en la app y el calendario de Google se queda como está.</p>
+          <button class="btn btn-danger btn-block" type="submit">Desconectar Google Calendar</button>
+        </form>
+      </>
+    )
+  }
+
+</App>
+
+<script>
+  document.querySelector<HTMLElement>("[data-foco]")?.focus();
+</script>

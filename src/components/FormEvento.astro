@@ -1,0 +1,242 @@
+---
+import Campo from "./Campo.astro";
+import ResumenErrores from "./ResumenErrores.astro";
+import { AVISOS_DIA, AVISOS_HORA, ORDEN_TIPOS, REPETICIONES_TXT, TIPOS } from "@/lib/eventos";
+import type { ValoresEvento } from "@/lib/formEvento";
+import type { Errores } from "@/lib/validacion";
+
+interface Props {
+  valores: ValoresEvento;
+  errores: Errores;
+  hijos: { id: string; nombre: string }[];
+  miembros: { id: string; nombre: string; avatar: string }[];
+  nuevo: boolean;
+  googleConectado: boolean;
+  textoBoton: string;
+}
+const { valores: v, errores, hijos, miembros, nuevo, googleConectado, textoBoton } = Astro.props;
+
+const ETIQUETAS = { titulo: "Título", fecha: "Fecha", hora_inicio: "Hora", hora_fin: "Hora de fin", ubicacion: "Lugar", notas: "Notas", recordatorios: "Avisos" };
+const porDefecto = Object.fromEntries(ORDEN_TIPOS.map((t) => [t, TIPOS[t].porDefecto]));
+const ejemplos: Record<string, string> = {
+  cita_medica: "Por ejemplo: Revisión de los 6 meses",
+  vacuna: "Por ejemplo: Vacuna de los 6 meses",
+  cumpleanos: "Por ejemplo: Abuela Pilar",
+  tarea: "Por ejemplo: Comprar pañales talla 3",
+  evento: "Por ejemplo: Comida en casa de los abuelos",
+  recordatorio: "Por ejemplo: Pagar la guardería",
+};
+---
+
+<form method="post" class="card grid gap-6" novalidate data-form-evento data-nuevo={nuevo ? "si" : undefined} data-defectos={JSON.stringify(porDefecto)} data-ejemplos={JSON.stringify(ejemplos)}>
+  <ResumenErrores errores={errores} etiquetas={ETIQUETAS} />
+
+  <fieldset class="grid gap-3">
+    <legend class="label">¿Qué quieres apuntar?</legend>
+    <div class="tipos">
+      {
+        ORDEN_TIPOS.map((t) => (
+          <label class="tipo" style={`--c: ${TIPOS[t].color}`}>
+            <input type="radio" name="tipo" value={t} checked={v.tipo === t} />
+            <span class="tipo-emoji" aria-hidden="true">{TIPOS[t].emoji}</span>
+            <span class="tipo-nombre">{TIPOS[t].nombre}</span>
+          </label>
+        ))
+      }
+    </div>
+  </fieldset>
+
+  <div class="field">
+    <label class="label" for="titulo">{v.tipo === "cumpleanos" ? "¿De quién es el cumpleaños?" : "Título"}</label>
+    <p class="hint" id="titulo-hint" data-ejemplo>{ejemplos[v.tipo]}</p>
+    <input
+      class="input"
+      id="titulo"
+      name="titulo"
+      value={v.titulo}
+      maxlength="120"
+      required
+      aria-invalid={errores.titulo ? "true" : undefined}
+      aria-describedby={["titulo-hint", errores.titulo && "titulo-error"].filter(Boolean).join(" ")}
+    />
+    {errores.titulo && <p class="field-error" id="titulo-error">{errores.titulo}</p>}
+  </div>
+
+  <!-- Cuándo -->
+  <fieldset class="grid gap-4">
+    <legend class="label text-lg">Cuándo</legend>
+
+    <label class="check" data-solo-tarea hidden={v.tipo !== "tarea"}>
+      <input type="checkbox" name="sin_fecha" value="si" checked={v.sinFecha} />
+      <span>Sin fecha (tarea pendiente cuando se pueda)</span>
+    </label>
+
+    <div class="grid gap-4" data-con-fecha hidden={v.sinFecha && v.tipo === "tarea"}>
+      <div class="grid gap-4 sm:grid-cols-2 items-start">
+        <Campo id="fecha" label={v.tipo === "cumpleanos" ? "Fecha (de nacimiento, si la sabes)" : "Fecha"} type="date" value={v.fecha} error={errores.fecha} required={false} />
+        <div class="field">
+          <span class="label hidden sm:block" aria-hidden="true">&nbsp;</span>
+          <label class="check">
+            <input type="checkbox" name="todo_el_dia" value="si" checked={v.todoElDia} data-todo-dia />
+            <span>Todo el día</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="grid gap-4 grid-cols-2" data-horas hidden={v.todoElDia}>
+        <Campo id="hora_inicio" label="Empieza" type="time" value={v.horaInicio} error={errores.hora_inicio} required={false} />
+        <Campo id="hora_fin" label="Termina (opcional)" type="time" value={v.horaFin} error={errores.hora_fin} required={false} />
+      </div>
+
+      <div class="field">
+        <label class="label" for="repeticion">Repetir</label>
+        <select class="input" id="repeticion" name="repeticion">
+          {Object.entries(REPETICIONES_TXT).map(([valor, texto]) => <option value={valor} selected={v.repeticion === valor}>{texto}</option>)}
+        </select>
+      </div>
+    </div>
+  </fieldset>
+
+  <!-- Quién -->
+  <fieldset class="grid gap-4">
+    <legend class="label text-lg">Quién</legend>
+    <div class="grid gap-4 sm:grid-cols-2">
+      {
+        hijos.length > 0 && (
+          <div class="field">
+            <label class="label" for="hijo_id">¿Para quién es?</label>
+            <select class="input" id="hijo_id" name="hijo_id">
+              <option value="">Toda la familia</option>
+              {hijos.map((h) => <option value={h.id} selected={v.hijoId === h.id}>{h.nombre}</option>)}
+            </select>
+          </div>
+        )
+      }
+      <div class="field">
+        <label class="label" for="asignado_a">¿Quién se encarga?</label>
+        <select class="input" id="asignado_a" name="asignado_a">
+          <option value="">Cualquiera</option>
+          {miembros.map((m) => <option value={m.id} selected={v.asignadoA === m.id}>{m.avatar} {m.nombre}</option>)}
+        </select>
+      </div>
+    </div>
+  </fieldset>
+
+  <!-- Detalles -->
+  <fieldset class="grid gap-4">
+    <legend class="label text-lg">Detalles</legend>
+    <Campo id="ubicacion" label="Lugar (opcional)" value={v.ubicacion} error={errores.ubicacion} required={false} hint="Por ejemplo: Centro de Salud, consulta 4." />
+    <div class="field">
+      <label class="label" for="notas">Notas (opcional)</label>
+      <textarea class="input" id="notas" name="notas" rows="3" maxlength="2000" aria-invalid={errores.notas ? "true" : undefined}>{v.notas}</textarea>
+      {errores.notas && <p class="field-error">{errores.notas}</p>}
+    </div>
+  </fieldset>
+
+  <!-- Avisos -->
+  <div class="grid gap-3" data-con-fecha hidden={v.sinFecha && v.tipo === "tarea"}>
+    <fieldset class="grid gap-2" data-avisos="hora" hidden={v.todoElDia} disabled={v.todoElDia}>
+      <legend class="label text-lg">Avisos</legend>
+      <div class="grid gap-2 sm:grid-cols-2">
+        {AVISOS_HORA.map((a) => (
+          <label class="check"><input type="checkbox" name="recordatorio" value={a.min} checked={v.recordatorios.includes(a.min)} /><span>{a.txt}</span></label>
+        ))}
+      </div>
+    </fieldset>
+    <fieldset class="grid gap-2" data-avisos="dia" hidden={!v.todoElDia} disabled={!v.todoElDia}>
+      <legend class="label text-lg">Avisos</legend>
+      <div class="grid gap-2">
+        {AVISOS_DIA.map((a) => (
+          <label class="check"><input type="checkbox" name="recordatorio" value={a.min} checked={v.recordatorios.includes(a.min)} /><span>{a.txt}</span></label>
+        ))}
+      </div>
+    </fieldset>
+    {errores.recordatorios && <p class="field-error">{errores.recordatorios}</p>}
+    <p class="hint">
+      {
+        googleConectado
+          ? "Los avisos te llegan como notificación de Google Calendar."
+          : "Para recibir los avisos en el móvil, conecta Google Calendar desde la agenda."
+      }
+    </p>
+  </div>
+
+  <slot name="antes-del-boton" />
+  <button class="btn btn-primary btn-block" type="submit">{textoBoton}</button>
+</form>
+
+<script>
+  document.querySelectorAll<HTMLFormElement>("[data-form-evento]").forEach((form) => {
+    const defectos = JSON.parse(form.dataset.defectos ?? "{}");
+    const ejemplos = JSON.parse(form.dataset.ejemplos ?? "{}");
+    const esNuevo = form.dataset.nuevo === "si";
+    const todoDia = form.querySelector<HTMLInputElement>("[data-todo-dia]")!;
+    const sinFecha = form.querySelector<HTMLInputElement>('input[name="sin_fecha"]')!;
+    const repeticion = form.querySelector<HTMLSelectElement>("#repeticion")!;
+    const tituloLabel = form.querySelector<HTMLLabelElement>('label[for="titulo"]')!;
+    const fechaLabel = form.querySelector<HTMLLabelElement>('label[for="fecha"]')!;
+
+    const tipo = () => form.querySelector<HTMLInputElement>('input[name="tipo"]:checked')?.value ?? "evento";
+
+    function actualizar() {
+      const t = tipo();
+      const conFecha = !(t === "tarea" && sinFecha.checked);
+      form.querySelectorAll<HTMLElement>("[data-solo-tarea]").forEach((el) => (el.hidden = t !== "tarea"));
+      form.querySelectorAll<HTMLElement>("[data-con-fecha]").forEach((el) => (el.hidden = !conFecha));
+      form.querySelector<HTMLElement>("[data-horas]")!.hidden = todoDia.checked;
+      form.querySelectorAll<HTMLFieldSetElement>("[data-avisos]").forEach((fs) => {
+        const visible = fs.dataset.avisos === (todoDia.checked ? "dia" : "hora");
+        fs.hidden = !visible;
+        fs.disabled = !visible;
+      });
+      tituloLabel.textContent = t === "cumpleanos" ? "¿De quién es el cumpleaños?" : "Título";
+      fechaLabel.textContent = t === "cumpleanos" ? "Fecha (de nacimiento, si la sabes)" : "Fecha";
+      form.querySelector<HTMLElement>("[data-ejemplo]")!.textContent = ejemplos[t] ?? "";
+    }
+
+    form.addEventListener("change", (e) => {
+      const input = e.target as HTMLInputElement;
+      if (input.name === "tipo" && esNuevo) {
+        // En un evento nuevo, cada tipo trae sus valores habituales
+        const d = defectos[input.value] ?? {};
+        if (typeof d.todoElDia === "boolean") todoDia.checked = d.todoElDia;
+        repeticion.value = d.repeticion ?? "ninguna";
+        form.querySelectorAll<HTMLInputElement>('input[name="recordatorio"]').forEach((c) => {
+          c.checked = (d.recordatorios ?? []).includes(Number(c.value));
+        });
+      }
+      actualizar();
+    });
+    actualizar();
+  });
+</script>
+
+<style>
+  .tipos {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.5rem;
+  }
+  @media (min-width: 560px) {
+    .tipos { grid-template-columns: repeat(6, 1fr); }
+  }
+  .tipo {
+    position: relative;
+    display: grid;
+    justify-items: center;
+    gap: 0.2rem;
+    padding: 0.7rem 0.3rem;
+    border: 2px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--surface);
+    cursor: pointer;
+    text-align: center;
+  }
+  .tipo input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+  .tipo:hover { border-color: var(--muted); }
+  .tipo:has(input:checked) { border-color: var(--c); box-shadow: 0 0 0 2px var(--c); }
+  .tipo:has(input:focus-visible) { outline: 3px solid var(--focus); outline-offset: 2px; }
+  .tipo-emoji { font-size: 1.6rem; line-height: 1.2; }
+  .tipo-nombre { font-size: 0.85rem; font-weight: 700; line-height: 1.2; }
+  textarea.input { min-height: 6rem; resize: vertical; }
+</style>

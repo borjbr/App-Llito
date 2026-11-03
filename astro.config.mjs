@@ -14,6 +14,8 @@ export default defineConfig({
       TURSO_AUTH_TOKEN: envField.string({ context: "server", access: "secret", optional: true }),
       BETTER_AUTH_SECRET: envField.string({ context: "server", access: "secret", optional: true }),
       BETTER_AUTH_URL: envField.string({ context: "server", access: "secret", optional: true }),
+      GOOGLE_CLIENT_ID: envField.string({ context: "server", access: "secret", optional: true }),
+      GOOGLE_CLIENT_SECRET: envField.string({ context: "server", access: "secret", optional: true }),
     },
   },
   vite: {

@@ -1,0 +1,115 @@
+---
+import App from "@/layouts/App.astro";
+import FormEvento from "@/components/FormEvento.astro";
+import { db } from "@/db/client";
+import { evento } from "@/db/schema";
+import { hijosDe, miembrosDe } from "@/lib/familia";
+import { aFila, buscarEvento, TIPOS } from "@/lib/eventos";
+import { leerFormEvento, valoresDe, destinoSeguro } from "@/lib/formEvento";
+import { borrarEnGoogle, conexionDe, subirEvento } from "@/lib/google";
+import type { Errores } from "@/lib/validacion";
+import { eq } from "drizzle-orm";
+
+const hogar = Astro.locals.hogar!;
+const id = Astro.params.id!;
+const actual = await buscarEvento(hogar.id, id);
+if (!actual) return Astro.redirect("/agenda?error=no-existe");
+
+const [hijos, miembros, conexion] = await Promise.all([hijosDe(hogar.id), miembrosDe(hogar.id), conexionDe(hogar.id)]);
+let valores = valoresDe(actual);
+let errores: Errores = {};
+let confirmarBorrado = false;
+const volverAgenda = actual.fecha ? `/agenda?dia=${actual.fecha}` : "/agenda";
+
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  const accion = String(form.get("accion") ?? "guardar");
+
+  if (accion === "completar") {
+    const [cambiado] = await db
+      .update(evento)
+      .set({ completado: !actual.completado, updatedAt: new Date() })
+      .where(eq(evento.id, actual.id))
+      .returning();
+    await subirEvento(hogar.id, cambiado);
+    return Astro.redirect(destinoSeguro(form.get("volver"), volverAgenda), 303);
+  }
+
+  if (accion === "borrar") confirmarBorrado = true;
+
+  if (accion === "borrar-confirmado") {
+    await db.delete(evento).where(eq(evento.id, actual.id));
+    await borrarEnGoogle(hogar.id, actual.googleId);
+    return Astro.redirect(`${volverAgenda}${volverAgenda.includes("?") ? "&" : "?"}ok=borrado`, 303);
+  }
+
+  if (accion === "guardar") {
+    const leido = leerFormEvento(form, { hijos: hijos.map((h) => h.id), miembros: miembros.map((m) => m.id) });
+    valores = leido.valores;
+    errores = leido.errores;
+    if (leido.datos) {
+      const [guardado] = await db
+        .update(evento)
+        .set({ ...aFila(leido.datos), updatedAt: new Date() })
+        .where(eq(evento.id, actual.id))
+        .returning();
+      if (guardado.fecha) await subirEvento(hogar.id, guardado);
+      else await borrarEnGoogle(hogar.id, actual.googleId); // una tarea que se queda sin fecha sale del calendario
+      const destino = guardado.fecha ? `/agenda?dia=${guardado.fecha}&ok=guardado` : "/agenda?ok=guardado";
+      return Astro.redirect(destino, 303);
+    }
+  }
+}
+
+const t = TIPOS[actual.tipo];
+---
+
+<App title={actual.titulo}>
+  <header class="grid gap-2">
+    <a href={volverAgenda} class="btn btn-ghost justify-self-start -ml-3"><span aria-hidden="true">←</span> Agenda</a>
+    <h1 class="break-words"><span aria-hidden="true">{t.emoji}</span> {actual.titulo}</h1>
+    {
+      conexion && (
+        <p class="hint">{actual.sincronizado ? "Sincronizado con Google Calendar." : actual.fecha ? "Pendiente de subir a Google Calendar." : "Las tareas sin fecha no se envían a Google Calendar."}</p>
+      )
+    }
+  </header>
+
+  {
+    confirmarBorrado && (
+      <form method="post" class="alert alert-error" role="alert" tabindex="-1" data-foco>
+        <p>¿Borrar «{actual.titulo}»?{actual.repeticion !== "ninguna" ? " Se borrarán todas las repeticiones." : ""}{actual.googleId ? " También desaparecerá de Google Calendar." : ""}</p>
+        <div class="flex gap-2 flex-wrap">
+          <input type="hidden" name="accion" value="borrar-confirmado" />
+          <button class="btn btn-danger" type="submit">Sí, borrar</button>
+          <a href={`/agenda/${actual.id}`} class="btn btn-secondary" style="color: var(--ink);">Cancelar</a>
+        </div>
+      </form>
+    )
+  }
+
+  <FormEvento
+    valores={valores}
+    errores={errores}
+    hijos={hijos}
+    miembros={miembros}
+    nuevo={false}
+    googleConectado={Boolean(conexion)}
+    textoBoton="Guardar cambios"
+  >
+    <input slot="antes-del-boton" type="hidden" name="accion" value="guardar" />
+  </FormEvento>
+
+  {
+    !confirmarBorrado && (
+      <form method="post" class="grid">
+        <input type="hidden" name="accion" value="borrar" />
+        <button class="btn btn-danger btn-block" type="submit">Borrar</button>
+      </form>
+    )
+  }
+</App>
+
+<script>
+  document.querySelector<HTMLElement>("[data-foco]")?.focus();
+</script>
