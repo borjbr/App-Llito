@@ -1,0 +1,37 @@
+---
+import App from "@/layouts/App.astro";
+import { hijosDe } from "@/lib/familia";
+
+const user = Astro.locals.user!;
+const hijos = await hijosDe(user.id);
+---
+
+<App title="Hijos">
+  <header class="grid gap-2">
+    <h1 style="color: var(--hijos);">{hijos.length === 1 ? hijos[0].nombre : "Hijos"}</h1>
+    <p class="text-muted">Tomas, comidas, salud y crecimiento. Lo construimos en los próximos pasos.</p>
+  </header>
+
+  {
+    hijos.length === 0 ? (
+      <div class="card grid gap-3 justify-items-start">
+        <p>Todavía no has añadido a ningún hijo o hija.</p>
+        <a href="/mi-perfil#tiene_hijos" class="btn btn-primary">Añadir en Mi perfil</a>
+      </div>
+    ) : (
+      <ul class="grid gap-3 list-none p-0 m-0">
+        {hijos.map((h) => (
+          <li class="card flex items-center gap-4">
+            <span class="grid place-items-center size-14 shrink-0 rounded-full text-2xl font-bold font-display" style="background: var(--hijos-soft); color: var(--hijos);" aria-hidden="true">
+              {h.nombre.charAt(0).toUpperCase()}
+            </span>
+            <div class="grid gap-1 min-w-0">
+              <h2 class="break-words">{h.nombre}</h2>
+              <p class="text-muted">Tomas y comidas · Salud · Crecimiento</p>
+            </div>
+          </li>
+        ))}
+      </ul>
+    )
+  }
+</App>

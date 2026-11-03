@@ -1,0 +1,115 @@
+---
+import App from "@/layouts/App.astro";
+import CamposPerfil from "@/components/CamposPerfil.astro";
+import ResumenErrores from "@/components/ResumenErrores.astro";
+import { db } from "@/db/client";
+import { hijo, user as tablaUser } from "@/db/schema";
+import { hijosDe } from "@/lib/familia";
+import { perfilSchema, leerHijos, aErrores, type Errores, type HijoForm } from "@/lib/validacion";
+import { and, eq, inArray, ne } from "drizzle-orm";
+
+const usuario = Astro.locals.user!;
+const existentes = await hijosDe(usuario.id);
+
+let errores: Errores = {};
+let guardado = false;
+let valores: Record<string, string | number | null | undefined> = {
+  nombre: usuario.name,
+  apellidos: usuario.apellidos,
+  email: usuario.email,
+  avatar: usuario.avatar,
+  edad: usuario.edad,
+};
+let hijos: HijoForm[] = existentes.map((h) => ({ id: h.id, nombre: h.nombre }));
+let tieneHijos = hijos.length > 0;
+
+const ETIQUETAS = { nombre: "Nombre", apellidos: "Apellidos", email: "Correo", edad: "Edad", avatar: "Avatar", tiene_hijos: "Hijos" };
+
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  valores = Object.fromEntries(
+    ["nombre", "apellidos", "email", "edad", "avatar"].map((k) => [k, String(form.get(k) ?? "")]),
+  );
+  const leidos = leerHijos(form);
+  hijos = leidos.hijos;
+  tieneHijos = form.get("tiene_hijos") === "si";
+
+  const datos = perfilSchema.safeParse(valores);
+  if (!datos.success) errores = aErrores(datos.error);
+  if (leidos.error) errores.tiene_hijos = leidos.error;
+
+  if (datos.success && !errores.email) {
+    const ocupado = await db
+      .select({ id: tablaUser.id })
+      .from(tablaUser)
+      .where(and(eq(tablaUser.email, datos.data.email), ne(tablaUser.id, usuario.id)))
+      .get();
+    if (ocupado) errores.email = "Ese correo ya lo usa otra cuenta.";
+  }
+
+  if (datos.success && Object.keys(errores).length === 0) {
+    const d = datos.data;
+    const idsPropios = new Set(existentes.map((h) => h.id));
+    const conservar = hijos.filter((h) => h.id && idsPropios.has(h.id));
+    const nuevos = hijos.filter((h) => !h.id || !idsPropios.has(h.id));
+    const quitar = existentes.filter((h) => !conservar.some((c) => c.id === h.id)).map((h) => h.id);
+
+    await db.batch([
+      db
+        .update(tablaUser)
+        .set({ name: d.nombre, apellidos: d.apellidos, email: d.email, avatar: d.avatar, edad: d.edad, updatedAt: new Date() })
+        .where(eq(tablaUser.id, usuario.id)),
+      ...conservar.map((h) =>
+        db
+          .update(hijo)
+          .set({ nombre: h.nombre, orden: hijos.indexOf(h), updatedAt: new Date() })
+          .where(and(eq(hijo.id, h.id!), eq(hijo.userId, usuario.id))),
+      ),
+      ...(nuevos.length > 0
+        ? [db.insert(hijo).values(nuevos.map((h) => ({ userId: usuario.id, nombre: h.nombre, orden: hijos.indexOf(h) })))]
+        : []),
+      ...(quitar.length > 0 ? [db.delete(hijo).where(and(eq(hijo.userId, usuario.id), inArray(hijo.id, quitar)))] : []),
+    ]);
+
+    // Volver a leer para mostrar los ids definitivos y la cabecera actualizada
+    return Astro.redirect("/mi-perfil?guardado=1", 303);
+  }
+}
+
+guardado = Astro.url.searchParams.has("guardado") && Astro.request.method === "GET";
+---
+
+<App title="Mi perfil">
+  <header class="flex items-center gap-4">
+    <span class="grid place-items-center size-16 shrink-0 rounded-full text-4xl" style="background: var(--surface-2);" aria-hidden="true">
+      {usuario.avatar}
+    </span>
+    <div class="min-w-0">
+      <h1>Mi perfil</h1>
+      <p class="text-muted break-words">{usuario.name} {usuario.apellidos}</p>
+    </div>
+  </header>
+
+  {
+    guardado && (
+      <div class="alert alert-ok" role="status" tabindex="-1" data-guardado>
+        <p>Cambios guardados.</p>
+      </div>
+    )
+  }
+
+  <form method="post" class="card grid gap-7" novalidate>
+    <ResumenErrores errores={errores} etiquetas={ETIQUETAS} />
+    <CamposPerfil valores={valores} hijos={hijos} tieneHijos={tieneHijos} errores={{ ...errores, hijos: errores.tiene_hijos }} />
+    <p class="hint">Si quitas a un hijo o hija de la lista, se borrarán también sus registros.</p>
+    <button class="btn btn-primary btn-block" type="submit">Guardar cambios</button>
+  </form>
+
+  <form method="post" action="/salir" class="grid">
+    <button class="btn btn-danger btn-block" type="submit">Cerrar sesión</button>
+  </form>
+</App>
+
+<script>
+  document.querySelector<HTMLElement>("[data-guardado]")?.focus();
+</script>

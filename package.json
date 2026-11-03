@@ -1,0 +1,44 @@
+{
+  "name": "app-llito",
+  "version": "1.0.0",
+  "description": "App familiar: hogar y cuidado de los hijos",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "check": "astro check",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:studio": "drizzle-kit studio"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/borjbr/app-llito.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/borjbr/app-llito/issues"
+  },
+  "homepage": "https://github.com/borjbr/app-llito#readme",
+  "dependencies": {
+    "@astrojs/vercel": "^8.2.11",
+    "@libsql/client": "^0.18.0",
+    "@tailwindcss/vite": "^4.3.4",
+    "astro": "^5.18.2",
+    "better-auth": "^1.7.15",
+    "drizzle-orm": "^0.45.4",
+    "tailwindcss": "^4.3.4",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.12",
+    "drizzle-kit": "^0.31.11",
+    "typescript": "^5.9.3"
+  },
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  }
+}

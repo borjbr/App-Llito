@@ -1,0 +1,51 @@
+---
+import Base from "./Base.astro";
+
+interface Props {
+  title: string;
+}
+const { title } = Astro.props;
+const user = Astro.locals.user!;
+const ruta = Astro.url.pathname;
+const activa = (href: string) => (href === "/" ? ruta === "/" : ruta.startsWith(href));
+
+const tabs = [
+  { href: "/", texto: "Inicio", icono: "inicio" },
+  { href: "/hogar", texto: "Hogar", icono: "hogar" },
+  { href: "/hijos", texto: "Hijos", icono: "hijos" },
+  { href: "/mi-perfil", texto: "Mi perfil", icono: "perfil" },
+] as const;
+---
+
+<Base title={title}>
+  <nav class="tabbar" aria-label="Menú principal">
+    <ul>
+      {
+        tabs.map((t) => (
+          <li>
+            <a href={t.href} aria-current={activa(t.href) ? "page" : undefined}>
+              <span class="tab-icon" aria-hidden="true">
+                {t.icono === "inicio" && (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h6V4H4zM14 20h6v-8h-6zM14 8h6V4h-6zM4 20h6v-4H4z" /></svg>
+                )}
+                {t.icono === "hogar" && (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5" /><path d="M5 9.5V20h14V9.5" /><path d="M10 20v-5h4v5" /></svg>
+                )}
+                {t.icono === "hijos" && (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="11" r="7" /><path d="M9.5 11h.01M14.5 11h.01" /><path d="M10 14.2c1.2.9 2.8.9 4 0" /><path d="M12 4c-1 0-1.6.6-1.6 1.3S11 6.5 12 6" /></svg>
+                )}
+                {t.icono === "perfil" && <span class="tab-emoji">{user.avatar}</span>}
+              </span>
+              <span>{t.texto}</span>
+            </a>
+          </li>
+        ))
+      }
+    </ul>
+  </nav>
+  <main id="contenido" class="gutter" style="padding-block: 1.75rem calc(6.5rem + env(safe-area-inset-bottom, 0px));">
+    <div class="max-w-2xl mx-auto grid gap-6">
+      <slot />
+    </div>
+  </main>
+</Base>

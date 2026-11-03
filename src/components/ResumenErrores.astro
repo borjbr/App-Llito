@@ -1,0 +1,37 @@
+---
+/**
+ * Resumen de errores arriba del formulario. Recibe el foco al cargar para que
+ * los lectores de pantalla lo anuncien, y enlaza a cada campo con error.
+ */
+import type { Errores } from "@/lib/validacion";
+
+interface Props {
+  errores: Errores;
+  etiquetas: Record<string, string>;
+}
+const { errores, etiquetas } = Astro.props;
+const lista = Object.entries(errores);
+---
+
+{
+  lista.length > 0 && (
+    <div class="alert alert-error" role="alert" tabindex="-1" data-resumen-errores>
+      <p>{lista.length === 1 ? "Revisa este dato:" : `Revisa estos ${lista.length} datos:`}</p>
+      <ul>
+        {lista.map(([campo, mensaje]) =>
+          etiquetas[campo] ? (
+            <li>
+              <a href={`#${campo}`}>{mensaje}</a>
+            </li>
+          ) : (
+            <li>{mensaje}</li>
+          ),
+        )}
+      </ul>
+    </div>
+  )
+}
+
+<script>
+  document.querySelector<HTMLElement>("[data-resumen-errores]")?.focus();
+</script>
