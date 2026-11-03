@@ -1,0 +1,61 @@
+---
+import Auth from "@/layouts/Auth.astro";
+import Campo from "@/components/Campo.astro";
+import CampoPassword from "@/components/CampoPassword.astro";
+import { auth, redirigirConCookies } from "@/lib/auth";
+
+let error = "";
+let email = "";
+
+// Solo se aceptan destinos internos tras el login
+const next = Astro.url.searchParams.get("next");
+const destino = next && next.startsWith("/") && !next.startsWith("//") ? next : "/";
+
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  email = String(form.get("email") ?? "").trim().toLowerCase();
+  const password = String(form.get("password") ?? "");
+
+  if (!email || !password) {
+    error = "Escribe tu correo y tu contraseña.";
+  } else {
+    try {
+      const res = await auth.api.signInEmail({
+        body: { email, password },
+        headers: Astro.request.headers,
+        asResponse: true,
+      });
+      if (res.ok) return redirigirConCookies(res, destino);
+      error = res.status === 429
+        ? "Demasiados intentos. Espera un minuto y vuelve a probar."
+        : "El correo o la contraseña no son correctos.";
+    } catch {
+      error = "No hemos podido iniciar sesión. Inténtalo de nuevo en unos segundos.";
+    }
+  }
+}
+---
+
+<Auth title="Iniciar sesión" heading="Hola de nuevo" intro="Entra para ver el día de tu familia.">
+  <form method="post" class="card grid gap-5" novalidate>
+    {
+      error && (
+        <div class="alert alert-error" role="alert" tabindex="-1" data-error-login>
+          <p>{error}</p>
+        </div>
+      )
+    }
+    <Campo id="email" label="Correo electrónico" type="email" value={email} autocomplete="email" inputmode="email" />
+    <CampoPassword id="password" autocomplete="current-password" />
+    <button class="btn btn-primary btn-block" type="submit">Entrar</button>
+  </form>
+
+  <p class="text-center">
+    ¿Todavía no tienes cuenta?
+    <a href="/registro" class="font-bold">Crear una cuenta</a>
+  </p>
+</Auth>
+
+<script>
+  document.querySelector<HTMLElement>("[data-error-login]")?.focus();
+</script>

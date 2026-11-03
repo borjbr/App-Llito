@@ -1,0 +1,30 @@
+---
+import App from "@/layouts/App.astro";
+
+const proximamente = [
+  { icono: "✅", titulo: "Tareas", texto: "Repartid las tareas de casa y marcad lo hecho." },
+  { icono: "🛒", titulo: "Lista de la compra", texto: "Una lista compartida que se actualiza para los dos." },
+  { icono: "📅", titulo: "Agenda", texto: "Citas, cumpleaños y planes de la familia." },
+];
+---
+
+<App title="Hogar">
+  <header class="grid gap-2">
+    <h1 style="color: var(--hogar);">Hogar</h1>
+    <p class="text-muted">Lo que vamos a construir en esta sección:</p>
+  </header>
+  <ul class="grid gap-3 list-none p-0 m-0">
+    {
+      proximamente.map((m) => (
+        <li class="card flex items-start gap-4">
+          <span class="text-3xl" aria-hidden="true">{m.icono}</span>
+          <div class="grid gap-1 min-w-0">
+            <h2>{m.titulo}</h2>
+            <p class="text-muted">{m.texto}</p>
+            <p class="text-sm font-bold" style="color: var(--hogar);">Próximamente</p>
+          </div>
+        </li>
+      ))
+    }
+  </ul>
+</App>

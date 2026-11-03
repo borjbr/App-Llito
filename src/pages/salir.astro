@@ -1,0 +1,9 @@
+---
+import { auth, redirigirConCookies } from "@/lib/auth";
+
+// Cerrar sesión solo por POST (formulario en Mi perfil)
+if (Astro.request.method !== "POST") return Astro.redirect("/mi-perfil");
+
+const res = await auth.api.signOut({ headers: Astro.request.headers, asResponse: true });
+return redirigirConCookies(res, "/login");
+---

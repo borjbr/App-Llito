@@ -1,0 +1,93 @@
+---
+import Auth from "@/layouts/Auth.astro";
+import CamposPerfil from "@/components/CamposPerfil.astro";
+import CampoPassword from "@/components/CampoPassword.astro";
+import ResumenErrores from "@/components/ResumenErrores.astro";
+import { auth, redirigirConCookies } from "@/lib/auth";
+import { db } from "@/db/client";
+import { hijo } from "@/db/schema";
+import { registroSchema, leerHijos, aErrores, type Errores, type HijoForm } from "@/lib/validacion";
+
+let errores: Errores = {};
+let valores: Record<string, string> = {};
+let hijos: HijoForm[] = [];
+let tieneHijos = false;
+
+const ETIQUETAS = {
+  nombre: "Nombre",
+  apellidos: "Apellidos",
+  email: "Correo electrónico",
+  edad: "Edad",
+  avatar: "Avatar",
+  password: "Contraseña",
+  tiene_hijos: "Hijos",
+};
+
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  valores = Object.fromEntries(
+    ["nombre", "apellidos", "email", "edad", "avatar"].map((k) => [k, String(form.get(k) ?? "")]),
+  );
+  const leidos = leerHijos(form);
+  hijos = leidos.hijos;
+  tieneHijos = form.get("tiene_hijos") === "si";
+
+  const datos = registroSchema.safeParse({ ...valores, password: form.get("password") ?? "" });
+  if (!datos.success) errores = aErrores(datos.error);
+  if (leidos.error) errores.tiene_hijos = leidos.error;
+
+  if (datos.success && !leidos.error) {
+    const d = datos.data;
+    try {
+      const res = await auth.api.signUpEmail({
+        body: {
+          name: d.nombre,
+          apellidos: d.apellidos,
+          email: d.email,
+          password: d.password,
+          avatar: d.avatar,
+          edad: d.edad,
+        },
+        headers: Astro.request.headers,
+        asResponse: true,
+      });
+
+      if (res.ok) {
+        const { user } = (await res.clone().json()) as { user: { id: string } };
+        if (hijos.length > 0) {
+          await db.insert(hijo).values(hijos.map((h, i) => ({ userId: user.id, nombre: h.nombre, orden: i })));
+        }
+        return redirigirConCookies(res, "/?bienvenida=1");
+      }
+
+      const cuerpo = (await res.json().catch(() => ({}))) as { code?: string };
+      if (cuerpo.code === "USER_ALREADY_EXISTS" || cuerpo.code?.includes("ALREADY_EXISTS")) {
+        errores.email = "Ya existe una cuenta con este correo. Inicia sesión o usa otro correo.";
+      } else if (res.status === 429) {
+        errores.general = "Demasiados intentos. Espera un minuto y vuelve a probar.";
+      } else {
+        errores.general = "No hemos podido crear la cuenta. Revisa los datos e inténtalo de nuevo.";
+      }
+    } catch {
+      errores.general = "No hemos podido crear la cuenta. Inténtalo de nuevo en unos segundos.";
+    }
+  }
+}
+---
+
+<Auth title="Crear cuenta" heading="Crea tu cuenta" intro="Tardas un minuto. Podrás cambiar todos estos datos después en Mi perfil.">
+  <form method="post" class="card grid gap-7" novalidate>
+    <ResumenErrores errores={errores} etiquetas={ETIQUETAS} />
+    <CamposPerfil valores={valores} hijos={hijos} tieneHijos={tieneHijos} errores={{ ...errores, hijos: errores.tiene_hijos }} />
+    <section class="grid gap-4" aria-labelledby="sec-acceso">
+      <h2 id="sec-acceso">Acceso</h2>
+      <CampoPassword id="password" autocomplete="new-password" hint="Al menos 8 caracteres." error={errores.password} />
+    </section>
+    <button class="btn btn-primary btn-block" type="submit">Crear cuenta</button>
+  </form>
+
+  <p class="text-center">
+    ¿Ya tienes cuenta?
+    <a href="/login" class="font-bold">Iniciar sesión</a>
+  </p>
+</Auth>

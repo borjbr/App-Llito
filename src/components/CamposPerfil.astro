@@ -1,0 +1,43 @@
+---
+/** Campos compartidos por el registro y Mi perfil. */
+import Campo from "./Campo.astro";
+import SelectorAvatar from "./SelectorAvatar.astro";
+import CampoHijos from "./CampoHijos.astro";
+import type { Errores, HijoForm } from "@/lib/validacion";
+
+interface Props {
+  valores: {
+    nombre?: string;
+    apellidos?: string;
+    email?: string;
+    avatar?: string;
+    edad?: string | number | null;
+  };
+  hijos: HijoForm[];
+  tieneHijos: boolean;
+  errores: Errores;
+}
+const { valores, hijos, tieneHijos, errores } = Astro.props;
+---
+
+<section class="grid gap-4" aria-labelledby="sec-datos">
+  <h2 id="sec-datos">Tus datos</h2>
+  <div class="grid gap-4 sm:grid-cols-2">
+    <Campo id="nombre" label="Nombre" value={valores.nombre} error={errores.nombre} autocomplete="given-name" />
+    <Campo id="apellidos" label="Apellidos" value={valores.apellidos} error={errores.apellidos} autocomplete="family-name" />
+  </div>
+  <Campo id="email" label="Correo electrónico" type="email" value={valores.email} error={errores.email} autocomplete="email" inputmode="email" />
+  <div class="max-w-40">
+    <Campo id="edad" label="Edad" type="number" value={valores.edad} error={errores.edad} inputmode="numeric" min={14} max={120} hint="En años." />
+  </div>
+</section>
+
+<section class="grid gap-4" aria-labelledby="sec-avatar">
+  <h2 id="sec-avatar" class="sr-only">Avatar</h2>
+  <SelectorAvatar valor={valores.avatar} error={errores.avatar} />
+</section>
+
+<section class="grid gap-4" aria-labelledby="sec-familia">
+  <h2 id="sec-familia">Familia</h2>
+  <CampoHijos hijos={hijos} tieneHijos={tieneHijos} error={errores.hijos} />
+</section>

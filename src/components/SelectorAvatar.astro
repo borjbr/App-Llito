@@ -1,0 +1,31 @@
+---
+import { AVATARES } from "@/lib/avatares";
+
+interface Props {
+  valor?: string;
+  error?: string;
+}
+const { valor = AVATARES[0].emoji, error } = Astro.props;
+---
+
+<fieldset class="grid gap-3" aria-describedby={error ? "avatar-error" : undefined}>
+  <legend class="label" id="avatar">Elige tu avatar</legend>
+  <div class="avatar-grid">
+    {
+      AVATARES.map((a, i) => (
+        <label class="avatar-option">
+          <input
+            type="radio"
+            name="avatar"
+            value={a.emoji}
+            checked={a.emoji === valor}
+            aria-label={a.etiqueta}
+            required={i === 0}
+          />
+          <span aria-hidden="true">{a.emoji}</span>
+        </label>
+      ))
+    }
+  </div>
+  {error && <p class="field-error" id="avatar-error">{error}</p>}
+</fieldset>

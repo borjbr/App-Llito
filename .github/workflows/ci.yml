@@ -1,0 +1,23 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  comprobar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Tipos y plantillas
+        run: npm run check
+      - name: Build
+        run: npm run build
+        env:
+          BETTER_AUTH_SECRET: ci-only-secret-not-used-in-production

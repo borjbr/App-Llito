@@ -1,0 +1,103 @@
+---
+import App from "@/layouts/App.astro";
+import { hijosDe, listaNombres } from "@/lib/familia";
+
+const user = Astro.locals.user!;
+const hijos = await hijosDe(user.id);
+const nombres = hijos.map((h) => h.nombre);
+const bienvenida = Astro.url.searchParams.has("bienvenida");
+
+const hora = Number(
+  new Intl.DateTimeFormat("es-ES", { hour: "numeric", hour12: false, timeZone: "Europe/Madrid" }).format(new Date()),
+);
+const saludo = hora < 6 ? "Buenas noches" : hora < 14 ? "Buenos días" : hora < 21 ? "Buenas tardes" : "Buenas noches";
+const fecha = new Intl.DateTimeFormat("es-ES", { weekday: "long", day: "numeric", month: "long", timeZone: "Europe/Madrid" }).format(new Date());
+
+const tituloHijos = hijos.length === 1 ? nombres[0] : hijos.length > 1 ? "Hijos" : "Hijo/a";
+const textoHijos =
+  hijos.length > 0
+    ? `Comidas, salud y crecimiento de ${listaNombres(nombres)}.`
+    : "Añade a tus hijos en Mi perfil para empezar.";
+---
+
+<App title="Inicio">
+  {
+    bienvenida && (
+      <div class="alert alert-ok" role="status">
+        <p>Cuenta creada. Ya puedes empezar a organizaros.</p>
+      </div>
+    )
+  }
+
+  <header class="flex items-center gap-4">
+    <span class="grid place-items-center size-16 shrink-0 rounded-full text-4xl" style="background: var(--surface-2);" aria-hidden="true">
+      {user.avatar}
+    </span>
+    <div class="min-w-0">
+      <p class="text-muted first-letter:uppercase">{fecha}</p>
+      <h1>{saludo}, {user.name}</h1>
+    </div>
+  </header>
+
+  <section aria-labelledby="sec-secciones" class="grid gap-4">
+    <h2 id="sec-secciones" class="sr-only">Secciones</h2>
+    <ul class="grid gap-4 sm:grid-cols-2 list-none p-0 m-0">
+      <li>
+        <a href="/hogar" class="seccion" style="--c: var(--hogar); --c-soft: var(--hogar-soft);">
+          <span class="seccion-icono" aria-hidden="true">🏠</span>
+          <span class="grid gap-1">
+            <span class="seccion-titulo">Hogar</span>
+            <span class="seccion-texto">Tareas, lista de la compra y agenda de la familia.</span>
+          </span>
+          <span class="seccion-flecha" aria-hidden="true">→</span>
+        </a>
+      </li>
+      <li>
+        <a href="/hijos" class="seccion" style="--c: var(--hijos); --c-soft: var(--hijos-soft);">
+          <span class="seccion-icono" aria-hidden="true">🍼</span>
+          <span class="grid gap-1">
+            <span class="seccion-titulo">{tituloHijos}</span>
+            <span class="seccion-texto">{textoHijos}</span>
+          </span>
+          <span class="seccion-flecha" aria-hidden="true">→</span>
+        </a>
+      </li>
+    </ul>
+  </section>
+</App>
+
+<style>
+  .seccion {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 1rem;
+    min-height: 8.5rem;
+    padding: 1.25rem;
+    border-radius: var(--radius-lg);
+    background: var(--c-soft);
+    color: var(--ink);
+    text-decoration: none;
+    border: 2px solid transparent;
+    transition: border-color 0.15s, transform 0.1s;
+  }
+  .seccion:hover { border-color: var(--c); }
+  .seccion:active { transform: scale(0.99); }
+  .seccion-icono {
+    display: grid;
+    place-items: center;
+    width: 3.5rem;
+    height: 3.5rem;
+    border-radius: 18px;
+    background: var(--surface);
+    font-size: 1.9rem;
+  }
+  .seccion-titulo {
+    font-family: var(--font-display);
+    font-size: 1.45rem;
+    font-weight: 700;
+    color: var(--c);
+  }
+  .seccion-texto { color: var(--ink); font-size: 0.95rem; }
+  .seccion-flecha { font-size: 1.4rem; color: var(--c); font-weight: 700; }
+</style>

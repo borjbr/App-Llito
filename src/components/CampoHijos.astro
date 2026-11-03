@@ -1,0 +1,110 @@
+---
+/**
+ * «¿Tienes hijos?» + lista de nombres. Sin JavaScript se muestra un campo;
+ * con JavaScript se pueden añadir y quitar filas.
+ */
+import type { HijoForm } from "@/lib/validacion";
+
+interface Props {
+  hijos?: HijoForm[];
+  tieneHijos?: boolean;
+  error?: string;
+}
+const { hijos = [], tieneHijos = hijos.length > 0, error } = Astro.props;
+const filas: HijoForm[] = hijos.length > 0 ? hijos : [{ nombre: "" }];
+---
+
+<fieldset class="grid gap-3" data-hijos aria-describedby={error ? "hijos-error" : undefined}>
+  <legend class="label" id="tiene_hijos">¿Tienes hijos?</legend>
+  <div class="segmented">
+    <label><input type="radio" name="tiene_hijos" value="si" checked={tieneHijos} /><span>Sí</span></label>
+    <label><input type="radio" name="tiene_hijos" value="no" checked={!tieneHijos} /><span>No</span></label>
+  </div>
+
+  <div class="grid gap-3" data-lista hidden={!tieneHijos}>
+    <p class="hint">Escribe el nombre de cada hijo o hija.</p>
+    <ol class="grid gap-3 list-none p-0 m-0" data-filas>
+      {
+        filas.map((h, i) => (
+          <li class="flex items-end gap-2" data-fila>
+            <div class="field flex-1 min-w-0">
+              <label class="label" for={`hijo_nombre_${i}`}>
+                Nombre del hijo o hija {i + 1}
+              </label>
+              <input type="hidden" name="hijo_id" value={h.id ?? ""} />
+              <input class="input" id={`hijo_nombre_${i}`} name="hijo_nombre" value={h.nombre} autocomplete="off" maxlength="60" />
+            </div>
+            <button type="button" class="btn btn-secondary shrink-0" data-quitar aria-label={`Quitar hijo o hija ${i + 1}`} hidden>
+              Quitar
+            </button>
+          </li>
+        ))
+      }
+    </ol>
+    <button type="button" class="btn btn-secondary justify-self-start" data-anadir hidden>
+      <span aria-hidden="true">＋</span> Añadir otro hijo o hija
+    </button>
+    <p class="sr-only" aria-live="polite" data-aviso></p>
+  </div>
+  {error && <p class="field-error" id="hijos-error">{error}</p>}
+</fieldset>
+
+<script>
+  document.querySelectorAll<HTMLElement>("[data-hijos]").forEach((grupo) => {
+    const lista = grupo.querySelector<HTMLElement>("[data-lista]")!;
+    const filas = grupo.querySelector<HTMLOListElement>("[data-filas]")!;
+    const anadir = grupo.querySelector<HTMLButtonElement>("[data-anadir]")!;
+    const aviso = grupo.querySelector<HTMLElement>("[data-aviso]")!;
+    anadir.hidden = false;
+
+    const renumerar = () => {
+      const items = [...filas.querySelectorAll<HTMLElement>("[data-fila]")];
+      items.forEach((fila, i) => {
+        const input = fila.querySelector<HTMLInputElement>('input[name="hijo_nombre"]')!;
+        const label = fila.querySelector("label")!;
+        const quitar = fila.querySelector<HTMLButtonElement>("[data-quitar]")!;
+        input.id = `hijo_nombre_${i}`;
+        label.htmlFor = input.id;
+        label.textContent = `Nombre del hijo o hija ${i + 1}`;
+        quitar.setAttribute("aria-label", `Quitar ${input.value.trim() || `hijo o hija ${i + 1}`}`);
+        quitar.hidden = items.length === 1;
+      });
+    };
+
+    const actualizarVisibilidad = () => {
+      const si = grupo.querySelector<HTMLInputElement>('input[name="tiene_hijos"][value="si"]')!.checked;
+      lista.hidden = !si;
+    };
+
+    grupo.addEventListener("change", (e) => {
+      if ((e.target as HTMLInputElement).name === "tiene_hijos") actualizarVisibilidad();
+    });
+    grupo.addEventListener("input", (e) => {
+      if ((e.target as HTMLInputElement).name === "hijo_nombre") renumerar();
+    });
+
+    anadir.addEventListener("click", () => {
+      const plantilla = filas.querySelector<HTMLElement>("[data-fila]")!;
+      const nueva = plantilla.cloneNode(true) as HTMLElement;
+      nueva.querySelectorAll("input").forEach((i) => (i.value = ""));
+      filas.append(nueva);
+      renumerar();
+      nueva.querySelector<HTMLInputElement>('input[name="hijo_nombre"]')!.focus();
+      aviso.textContent = "Campo añadido.";
+    });
+
+    filas.addEventListener("click", (e) => {
+      const boton = (e.target as HTMLElement).closest<HTMLButtonElement>("[data-quitar]");
+      if (!boton) return;
+      const fila = boton.closest<HTMLElement>("[data-fila]")!;
+      const nombre = fila.querySelector<HTMLInputElement>('input[name="hijo_nombre"]')!.value.trim();
+      const siguiente = fila.nextElementSibling ?? fila.previousElementSibling;
+      fila.remove();
+      renumerar();
+      siguiente?.querySelector<HTMLInputElement>('input[name="hijo_nombre"]')?.focus();
+      aviso.textContent = nombre ? `${nombre} quitado de la lista.` : "Campo quitado.";
+    });
+
+    renumerar();
+  });
+</script>
