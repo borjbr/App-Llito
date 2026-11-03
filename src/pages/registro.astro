@@ -1,17 +1,34 @@
 ---
 import Auth from "@/layouts/Auth.astro";
 import CamposPerfil from "@/components/CamposPerfil.astro";
+import CampoHijos from "@/components/CampoHijos.astro";
 import CampoPassword from "@/components/CampoPassword.astro";
+import Campo from "@/components/Campo.astro";
 import ResumenErrores from "@/components/ResumenErrores.astro";
 import { auth, redirigirConCookies } from "@/lib/auth";
 import { db } from "@/db/client";
-import { hijo } from "@/db/schema";
+import { hijo, miembroHogar } from "@/db/schema";
+import { buscarHogarPorCodigo, crearHogar, formatearCodigo, miembrosDe, nombreHogarPorDefecto } from "@/lib/familia";
 import { registroSchema, leerHijos, aErrores, type Errores, type HijoForm } from "@/lib/validacion";
 
 let errores: Errores = {};
 let valores: Record<string, string> = {};
 let hijos: HijoForm[] = [];
 let tieneHijos = false;
+
+// Enlace de invitación: /registro?codigo=ABCD2345
+const codigoUrl = Astro.url.searchParams.get("codigo") ?? "";
+let modo: "crear" | "unirse" = codigoUrl ? "unirse" : "crear";
+let codigo = codigoUrl;
+
+// Si llega con un código válido, mostramos a qué hogar se va a unir
+let invitacion: { nombre: string; personas: string } | null = null;
+async function describirHogar(c: string) {
+  const h = c ? await buscarHogarPorCodigo(c) : undefined;
+  if (!h) return null;
+  const miembros = await miembrosDe(h.id);
+  return { nombre: h.nombre, personas: miembros.map((m) => `${m.avatar} ${m.nombre}`).join(", ") };
+}
 
 const ETIQUETAS = {
   nombre: "Nombre",
@@ -21,6 +38,7 @@ const ETIQUETAS = {
   avatar: "Avatar",
   password: "Contraseña",
   tiene_hijos: "Hijos",
+  codigo: "Código",
 };
 
 if (Astro.request.method === "POST") {
@@ -28,15 +46,26 @@ if (Astro.request.method === "POST") {
   valores = Object.fromEntries(
     ["nombre", "apellidos", "email", "edad", "avatar"].map((k) => [k, String(form.get(k) ?? "")]),
   );
-  const leidos = leerHijos(form);
-  hijos = leidos.hijos;
-  tieneHijos = form.get("tiene_hijos") === "si";
+  modo = form.get("modo_hogar") === "unirse" ? "unirse" : "crear";
+  codigo = String(form.get("codigo") ?? "");
 
   const datos = registroSchema.safeParse({ ...valores, password: form.get("password") ?? "" });
   if (!datos.success) errores = aErrores(datos.error);
-  if (leidos.error) errores.tiene_hijos = leidos.error;
 
-  if (datos.success && !leidos.error) {
+  let hogarDestino: Awaited<ReturnType<typeof buscarHogarPorCodigo>>;
+  if (modo === "crear") {
+    const leidos = leerHijos(form);
+    hijos = leidos.hijos;
+    tieneHijos = form.get("tiene_hijos") === "si";
+    if (leidos.error) errores.tiene_hijos = leidos.error;
+  } else if (!codigo.trim()) {
+    errores.codigo = "Escribe el código de invitación que te han pasado.";
+  } else {
+    hogarDestino = await buscarHogarPorCodigo(codigo);
+    if (!hogarDestino) errores.codigo = "Ese código no corresponde a ningún hogar. Revísalo o pide uno nuevo.";
+  }
+
+  if (datos.success && Object.keys(errores).length === 0) {
     const d = datos.data;
     try {
       const res = await auth.api.signUpEmail({
@@ -54,14 +83,19 @@ if (Astro.request.method === "POST") {
 
       if (res.ok) {
         const { user } = (await res.clone().json()) as { user: { id: string } };
+        if (hogarDestino) {
+          await db.insert(miembroHogar).values({ hogarId: hogarDestino.id, userId: user.id, rol: "miembro" });
+          return redirigirConCookies(res, "/?bienvenida=unido");
+        }
+        const nuevo = await crearHogar(user.id, nombreHogarPorDefecto(d.apellidos));
         if (hijos.length > 0) {
-          await db.insert(hijo).values(hijos.map((h, i) => ({ userId: user.id, nombre: h.nombre, orden: i })));
+          await db.insert(hijo).values(hijos.map((h, i) => ({ hogarId: nuevo.id, nombre: h.nombre, orden: i })));
         }
         return redirigirConCookies(res, "/?bienvenida=1");
       }
 
       const cuerpo = (await res.json().catch(() => ({}))) as { code?: string };
-      if (cuerpo.code === "USER_ALREADY_EXISTS" || cuerpo.code?.includes("ALREADY_EXISTS")) {
+      if (cuerpo.code?.includes("ALREADY_EXISTS")) {
         errores.email = "Ya existe una cuenta con este correo. Inicia sesión o usa otro correo.";
       } else if (res.status === 429) {
         errores.general = "Demasiados intentos. Espera un minuto y vuelve a probar.";
@@ -73,12 +107,63 @@ if (Astro.request.method === "POST") {
     }
   }
 }
+
+if (modo === "unirse" && !errores.codigo) invitacion = await describirHogar(codigo);
 ---
 
 <Auth title="Crear cuenta" heading="Crea tu cuenta" intro="Tardas un minuto. Podrás cambiar todos estos datos después en Mi perfil.">
+  {
+    invitacion && (
+      <div class="alert alert-ok" role="status">
+        <p>Te han invitado a «{invitacion.nombre}».</p>
+        <p style="font-weight: 400;">Compartirás los datos con {invitacion.personas}.</p>
+      </div>
+    )
+  }
+
   <form method="post" class="card grid gap-7" novalidate>
     <ResumenErrores errores={errores} etiquetas={ETIQUETAS} />
-    <CamposPerfil valores={valores} hijos={hijos} tieneHijos={tieneHijos} errores={{ ...errores, hijos: errores.tiene_hijos }} />
+    <CamposPerfil valores={valores} errores={errores} />
+
+    <section class="grid gap-4" aria-labelledby="sec-familia" data-modo-hogar>
+      <h2 id="sec-familia">Familia</h2>
+      <fieldset class="grid gap-3">
+        <legend class="label" id="modo_hogar">¿Cómo empiezas?</legend>
+        <div class="grid gap-2">
+          <label class="opcion">
+            <input type="radio" name="modo_hogar" value="crear" checked={modo === "crear"} />
+            <span>
+              <strong>Crear un hogar nuevo</strong>
+              <span class="hint">Después podrás invitar a tu pareja.</span>
+            </span>
+          </label>
+          <label class="opcion">
+            <input type="radio" name="modo_hogar" value="unirse" checked={modo === "unirse"} />
+            <span>
+              <strong>Unirme al hogar de mi pareja</strong>
+              <span class="hint">Necesitas el código de invitación.</span>
+            </span>
+          </label>
+        </div>
+      </fieldset>
+
+      <div data-solo="unirse" hidden={modo !== "unirse"}>
+        <Campo
+          id="codigo"
+          label="Código de invitación"
+          value={codigo ? formatearCodigo(codigo.toUpperCase()) : ""}
+          error={errores.codigo}
+          hint="Lo encuentra tu pareja en Mi perfil → Mi familia. Por ejemplo: ABCD-2345."
+          autocomplete="off"
+          required={false}
+        />
+      </div>
+
+      <div data-solo="crear" hidden={modo !== "crear"}>
+        <CampoHijos hijos={hijos} tieneHijos={tieneHijos} error={errores.tiene_hijos} />
+      </div>
+    </section>
+
     <section class="grid gap-4" aria-labelledby="sec-acceso">
       <h2 id="sec-acceso">Acceso</h2>
       <CampoPassword id="password" autocomplete="new-password" hint="Al menos 8 caracteres." error={errores.password} />
@@ -91,3 +176,14 @@ if (Astro.request.method === "POST") {
     <a href="/login" class="font-bold">Iniciar sesión</a>
   </p>
 </Auth>
+
+<script>
+  const grupo = document.querySelector<HTMLElement>("[data-modo-hogar]");
+  grupo?.addEventListener("change", (e) => {
+    const input = e.target as HTMLInputElement;
+    if (input.name !== "modo_hogar") return;
+    grupo.querySelectorAll<HTMLElement>("[data-solo]").forEach((bloque) => {
+      bloque.hidden = bloque.dataset.solo !== input.value;
+    });
+  });
+</script>

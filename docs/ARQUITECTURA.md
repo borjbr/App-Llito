@@ -41,12 +41,21 @@ docs/                este documento
 ## Modelo de datos actual
 
 - `user`: nombre, apellidos, email, avatar (emoji), edad. Tablas `session`, `account`, `verification` de Better Auth.
-- `hijo`: nombre y orden, ligado al usuario.
+- `hogar`: nombre y código de invitación (8 caracteres sin letras ambiguas).
+- `miembro_hogar`: une cada persona con su hogar (una persona, un hogar) y su rol (`admin` o `miembro`).
+- `hijo`: pertenece al hogar, no a la persona, para que la pareja comparta los mismos datos.
+
+### Hogar compartido
+
+- Al registrarse se elige **crear un hogar nuevo** o **unirse con un código**. El enlace `/registro?codigo=XXXX` preselecciona la opción y muestra a qué hogar se une.
+- En **Mi perfil → Mi familia** se ven los miembros, se copia el enlace o el código, se cambia el nombre del hogar y quien lo administra puede crear un código nuevo.
+- Unirse a otro hogar: si la persona era la única de su hogar y tenía hijos, se pide confirmación explícita porque ese hogar se borra.
+- Todo dato nuevo (tomas, salud, tareas, citas) colgará de `hogar_id`.
 
 ## Próximos pasos
 
-1. **Hogar compartido**: que la pareja vea a los mismos hijos y los mismos datos (tabla `hogar` + invitación por código o email).
+1. **Agenda y Google Calendar**: citas en la app sincronizadas con un calendario compartido de Google; los recordatorios de Google llegan como notificación a cada móvil.
 2. Hijos: tomas y comidas.
 3. Hijos: salud y crecimiento (con gráfica).
-4. Hogar: tareas, lista de la compra y agenda.
+4. Hogar: tareas y lista de la compra.
 5. Resumen del día en Inicio y PWA instalable.

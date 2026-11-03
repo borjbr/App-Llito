@@ -287,6 +287,32 @@
   .segmented input:checked + span { background: var(--surface); color: var(--ink); box-shadow: 0 1px 3px rgb(0 0 0 / 0.15); }
   .segmented input:focus-visible + span { outline: 3px solid var(--focus); outline-offset: 2px; }
 
+  /* Opción grande tipo tarjeta (radio nativo visible) */
+  .opcion {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.85rem;
+    align-items: start;
+    padding: 0.9rem 1rem;
+    border: 2px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--surface);
+    cursor: pointer;
+  }
+  .opcion:hover { border-color: var(--muted); }
+  .opcion:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+  .opcion input { width: 1.35rem; height: 1.35rem; margin: 0.15rem 0 0; accent-color: var(--accent); }
+  .opcion > span { display: grid; gap: 0.1rem; }
+
+  /* Código de invitación */
+  .codigo {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 1.9rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    font-variant-numeric: tabular-nums;
+  }
+
   /* Navegación inferior */
   .tabbar {
     position: fixed;

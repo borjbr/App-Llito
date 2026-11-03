@@ -1,5 +1,6 @@
 import { defineMiddleware } from "astro:middleware";
 import { auth } from "@/lib/auth";
+import { asegurarHogar } from "@/lib/familia";
 
 const PUBLICAS = ["/login", "/registro"];
 
@@ -12,6 +13,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
   const sesion = await auth.api.getSession({ headers: context.request.headers });
   context.locals.user = sesion?.user ?? null;
   context.locals.session = sesion?.session ?? null;
+  context.locals.hogar = null;
 
   const esPublica = PUBLICAS.includes(pathname);
 
@@ -20,6 +22,8 @@ export const onRequest = defineMiddleware(async (context, next) => {
     return context.redirect(destino);
   }
   if (sesion && esPublica) return context.redirect("/");
+
+  if (context.locals.user) context.locals.hogar = await asegurarHogar(context.locals.user);
 
   return next();
 });

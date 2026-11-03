@@ -1,15 +1,17 @@
 ---
 import App from "@/layouts/App.astro";
 import CamposPerfil from "@/components/CamposPerfil.astro";
+import CampoHijos from "@/components/CampoHijos.astro";
 import ResumenErrores from "@/components/ResumenErrores.astro";
 import { db } from "@/db/client";
 import { hijo, user as tablaUser } from "@/db/schema";
-import { hijosDe } from "@/lib/familia";
+import { hijosDe, miembrosDe } from "@/lib/familia";
 import { perfilSchema, leerHijos, aErrores, type Errores, type HijoForm } from "@/lib/validacion";
 import { and, eq, inArray, ne } from "drizzle-orm";
 
 const usuario = Astro.locals.user!;
-const existentes = await hijosDe(usuario.id);
+const hogar = Astro.locals.hogar!;
+const [existentes, miembros] = await Promise.all([hijosDe(hogar.id), miembrosDe(hogar.id)]);
 
 let errores: Errores = {};
 let guardado = false;
@@ -63,12 +65,12 @@ if (Astro.request.method === "POST") {
         db
           .update(hijo)
           .set({ nombre: h.nombre, orden: hijos.indexOf(h), updatedAt: new Date() })
-          .where(and(eq(hijo.id, h.id!), eq(hijo.userId, usuario.id))),
+          .where(and(eq(hijo.id, h.id!), eq(hijo.hogarId, hogar.id))),
       ),
       ...(nuevos.length > 0
-        ? [db.insert(hijo).values(nuevos.map((h) => ({ userId: usuario.id, nombre: h.nombre, orden: hijos.indexOf(h) })))]
+        ? [db.insert(hijo).values(nuevos.map((h) => ({ hogarId: hogar.id, nombre: h.nombre, orden: hijos.indexOf(h) })))]
         : []),
-      ...(quitar.length > 0 ? [db.delete(hijo).where(and(eq(hijo.userId, usuario.id), inArray(hijo.id, quitar)))] : []),
+      ...(quitar.length > 0 ? [db.delete(hijo).where(and(eq(hijo.hogarId, hogar.id), inArray(hijo.id, quitar)))] : []),
     ]);
 
     // Volver a leer para mostrar los ids definitivos y la cabecera actualizada
@@ -100,10 +102,26 @@ guardado = Astro.url.searchParams.has("guardado") && Astro.request.method === "G
 
   <form method="post" class="card grid gap-7" novalidate>
     <ResumenErrores errores={errores} etiquetas={ETIQUETAS} />
-    <CamposPerfil valores={valores} hijos={hijos} tieneHijos={tieneHijos} errores={{ ...errores, hijos: errores.tiene_hijos }} />
-    <p class="hint">Si quitas a un hijo o hija de la lista, se borrarán también sus registros.</p>
+    <CamposPerfil valores={valores} errores={errores} />
+    <section class="grid gap-4" aria-labelledby="sec-hijos">
+      <h2 id="sec-hijos">Hijos</h2>
+      {miembros.length > 1 && <p class="hint">Los hijos son comunes a todo el hogar: los cambios los verá también {miembros.filter((m) => m.id !== usuario.id).map((m) => m.nombre).join(", ")}.</p>}
+      <CampoHijos hijos={hijos} tieneHijos={tieneHijos} error={errores.tiene_hijos} />
+      <p class="hint">Si quitas a un hijo o hija de la lista, se borrarán también sus registros.</p>
+    </section>
     <button class="btn btn-primary btn-block" type="submit">Guardar cambios</button>
   </form>
+
+  <a href="/mi-perfil/familia" class="card enlace-familia">
+    <span class="flex -space-x-2 shrink-0" aria-hidden="true">
+      {miembros.map((m) => <span class="avatar-mini">{m.avatar}</span>)}
+    </span>
+    <span class="grid gap-0.5 min-w-0">
+      <span class="font-bold font-display text-lg">Mi familia</span>
+      <span class="hint">{hogar.nombre} · Invitar a tu pareja y gestionar el hogar</span>
+    </span>
+    <span aria-hidden="true" class="text-xl font-bold" style="color: var(--accent);">→</span>
+  </a>
 
   <form method="post" action="/salir" class="grid">
     <button class="btn btn-danger btn-block" type="submit">Cerrar sesión</button>
@@ -113,3 +131,25 @@ guardado = Astro.url.searchParams.has("guardado") && Astro.request.method === "G
 <script>
   document.querySelector<HTMLElement>("[data-guardado]")?.focus();
 </script>
+
+<style>
+  .enlace-familia {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 1rem;
+    color: var(--ink);
+    text-decoration: none;
+  }
+  .enlace-familia:hover { border-color: var(--accent); }
+  .avatar-mini {
+    display: grid;
+    place-items: center;
+    width: 2.4rem;
+    height: 2.4rem;
+    border-radius: 999px;
+    background: var(--surface-2);
+    border: 2px solid var(--surface);
+    font-size: 1.25rem;
+  }
+</style>

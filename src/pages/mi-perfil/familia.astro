@@ -1,0 +1,221 @@
+---
+import App from "@/layouts/App.astro";
+import Campo from "@/components/Campo.astro";
+import { db } from "@/db/client";
+import { hogar as tablaHogar } from "@/db/schema";
+import {
+  buscarHogarPorCodigo,
+  efectoDeSalir,
+  formatearCodigo,
+  listaNombres,
+  miembrosDe,
+  regenerarCodigo,
+  unirseAHogar,
+} from "@/lib/familia";
+import { eq } from "drizzle-orm";
+
+const usuario = Astro.locals.user!;
+const hogar = Astro.locals.hogar!;
+const esAdmin = hogar.rol === "admin";
+
+let errores: Record<string, string> = {};
+let nombreHogar = hogar.nombre;
+let codigoUnirse = "";
+/** Si unirse a otro hogar borraría datos, se pide confirmación explícita */
+let pedirConfirmacion: { destino: string; hijos: string[] } | null = null;
+
+const avisos: Record<string, string> = {
+  nombre: "Nombre del hogar guardado.",
+  codigo: "Código nuevo creado. El anterior ya no sirve.",
+  unido: "Te has unido al hogar. Ya veis los mismos datos.",
+};
+const aviso = Astro.request.method === "GET" ? avisos[Astro.url.searchParams.get("ok") ?? ""] : undefined;
+
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  const accion = String(form.get("accion") ?? "");
+
+  if (accion === "nombre") {
+    nombreHogar = String(form.get("nombre_hogar") ?? "").trim();
+    if (!nombreHogar) errores.nombre_hogar = "Escribe un nombre para el hogar.";
+    else if (nombreHogar.length > 60) errores.nombre_hogar = "El nombre puede tener como mucho 60 caracteres.";
+    else {
+      await db.update(tablaHogar).set({ nombre: nombreHogar, updatedAt: new Date() }).where(eq(tablaHogar.id, hogar.id));
+      return Astro.redirect("/mi-perfil/familia?ok=nombre", 303);
+    }
+  }
+
+  if (accion === "regenerar" && esAdmin) {
+    await regenerarCodigo(hogar.id);
+    return Astro.redirect("/mi-perfil/familia?ok=codigo", 303);
+  }
+
+  if (accion === "unirse") {
+    codigoUnirse = String(form.get("codigo_unirse") ?? "");
+    const destino = codigoUnirse.trim() ? await buscarHogarPorCodigo(codigoUnirse) : undefined;
+    if (!codigoUnirse.trim()) errores.codigo_unirse = "Escribe el código de invitación.";
+    else if (!destino) errores.codigo_unirse = "Ese código no corresponde a ningún hogar. Revísalo o pide uno nuevo.";
+    else if (destino.id === hogar.id) errores.codigo_unirse = "Ya estás en este hogar.";
+    else {
+      const efecto = await efectoDeSalir(usuario.id);
+      const confirmado = form.get("confirmar") === "si";
+      if (efecto.borraHogar && efecto.hijos.length > 0 && !confirmado) {
+        pedirConfirmacion = { destino: destino.nombre, hijos: efecto.hijos };
+      } else {
+        await unirseAHogar(usuario.id, destino.id);
+        return Astro.redirect("/mi-perfil/familia?ok=unido", 303);
+      }
+    }
+  }
+}
+
+const miembros = await miembrosDe(hogar.id);
+const codigo = formatearCodigo(hogar.codigoInvitacion);
+const enlace = new URL(`/registro?codigo=${hogar.codigoInvitacion}`, Astro.url.origin).toString();
+---
+
+<App title="Mi familia">
+  <header class="grid gap-2">
+    <a href="/mi-perfil" class="btn btn-ghost justify-self-start -ml-3"><span aria-hidden="true">←</span> Mi perfil</a>
+    <h1>Mi familia</h1>
+    <p class="text-muted">Todas las personas del hogar ven y apuntan los mismos datos.</p>
+  </header>
+
+  {aviso && <div class="alert alert-ok" role="status" tabindex="-1" data-foco><p>{aviso}</p></div>}
+
+  <!-- Miembros -->
+  <section class="card grid gap-4" aria-labelledby="sec-miembros">
+    <h2 id="sec-miembros">{hogar.nombre}</h2>
+    <ul class="grid gap-3 list-none p-0 m-0">
+      {
+        miembros.map((m) => (
+          <li class="flex items-center gap-3">
+            <span class="grid place-items-center size-12 shrink-0 rounded-full text-2xl" style="background: var(--surface-2);" aria-hidden="true">
+              {m.avatar}
+            </span>
+            <span class="min-w-0 grid">
+              <span class="font-bold break-words">
+                {m.nombre} {m.apellidos}
+                {m.id === usuario.id && <span class="hint font-normal">(tú)</span>}
+              </span>
+              <span class="hint">{m.rol === "admin" ? "Administra el hogar" : "Miembro"}</span>
+            </span>
+          </li>
+        ))
+      }
+    </ul>
+
+    <form method="post" class="grid gap-3 pt-2" style="border-top: 1px solid var(--line);" novalidate>
+      <input type="hidden" name="accion" value="nombre" />
+      <div class="field">
+        <label class="label" for="nombre_hogar">Nombre del hogar</label>
+        <div class="flex gap-2 flex-wrap">
+          <input
+            class="input flex-1 min-w-0"
+            style="min-width: 12rem;"
+            id="nombre_hogar"
+            name="nombre_hogar"
+            value={nombreHogar}
+            maxlength="60"
+            aria-invalid={errores.nombre_hogar ? "true" : undefined}
+            aria-describedby={errores.nombre_hogar ? "nombre_hogar-error" : undefined}
+          />
+          <button class="btn btn-secondary" type="submit">Guardar</button>
+        </div>
+        {errores.nombre_hogar && <p class="field-error" id="nombre_hogar-error">{errores.nombre_hogar}</p>}
+      </div>
+    </form>
+  </section>
+
+  <!-- Invitar -->
+  <section class="card grid gap-4" aria-labelledby="sec-invitar">
+    <div class="grid gap-1">
+      <h2 id="sec-invitar">Invitar a tu pareja</h2>
+      <p class="text-muted">
+        {
+          miembros.length === 1
+            ? "Pásale este enlace. Al crear su cuenta entrará directamente en vuestro hogar."
+            : `Ya sois ${miembros.length}: ${listaNombres(miembros.map((m) => m.nombre))}. Puedes invitar a alguien más, como los abuelos.`
+        }
+      </p>
+    </div>
+
+    <div class="grid gap-2">
+      <p class="label" id="etiqueta-enlace">Enlace de invitación</p>
+      <p class="input break-all" style="min-height: auto; font-size: 0.9rem;" aria-labelledby="etiqueta-enlace" data-texto-enlace>{enlace}</p>
+      <button type="button" class="btn btn-primary" data-copiar={enlace} hidden>Copiar enlace</button>
+    </div>
+
+    <div class="grid gap-2">
+      <p class="label">O dile este código</p>
+      <p class="codigo" aria-label={`Código: ${hogar.codigoInvitacion.split("").join(" ")}`}>{codigo}</p>
+      <p class="hint">Lo puede escribir al crear su cuenta, eligiendo «Unirme al hogar de mi pareja».</p>
+      <button type="button" class="btn btn-secondary justify-self-start" data-copiar={hogar.codigoInvitacion} hidden>Copiar código</button>
+    </div>
+
+    <p class="sr-only" aria-live="polite" data-aviso-copia></p>
+
+    {
+      esAdmin && (
+        <form method="post" class="grid gap-2 pt-2" style="border-top: 1px solid var(--line);">
+          <input type="hidden" name="accion" value="regenerar" />
+          <p class="hint">Si has compartido el código con quien no debías, crea uno nuevo: el anterior dejará de funcionar.</p>
+          <button class="btn btn-secondary justify-self-start" type="submit">Crear código nuevo</button>
+        </form>
+      )
+    }
+  </section>
+
+  <!-- Unirse a otro hogar -->
+  <section class="card grid gap-4" aria-labelledby="sec-unirse">
+    <div class="grid gap-1">
+      <h2 id="sec-unirse">¿Tu pareja ya creó vuestro hogar?</h2>
+      <p class="text-muted">Escribe su código para unirte. Dejarás este hogar y pasarás a ver los datos del suyo.</p>
+    </div>
+    <form method="post" class="grid gap-4" novalidate>
+      <input type="hidden" name="accion" value="unirse" />
+      <Campo id="codigo_unirse" label="Código de invitación" value={codigoUnirse} error={errores.codigo_unirse} autocomplete="off" required={false} />
+
+      {
+        pedirConfirmacion && (
+          <div class="alert alert-error" role="alert" tabindex="-1" data-foco>
+            <p>
+              Eres la única persona de «{hogar.nombre}». Si te unes a «{pedirConfirmacion.destino}», se borrarán {listaNombres(pedirConfirmacion.hijos)} y todos sus registros de este hogar.
+            </p>
+            <label class="flex items-start gap-3 font-normal" style="color: var(--ink);">
+              <input type="checkbox" name="confirmar" value="si" required style="width: 1.35rem; height: 1.35rem; margin-top: 0.15rem; accent-color: var(--danger);" />
+              <span>Entiendo que se borrarán estos datos. Si tu pareja ya tiene a vuestros hijos en su hogar, no pierdes nada.</span>
+            </label>
+          </div>
+        )
+      }
+
+      <button class="btn btn-secondary justify-self-start" type="submit">
+        {pedirConfirmacion ? "Confirmar y unirme" : "Unirme"}
+      </button>
+    </form>
+  </section>
+</App>
+
+<script>
+  document.querySelector<HTMLElement>("[data-foco]")?.focus();
+
+  const aviso = document.querySelector<HTMLElement>("[data-aviso-copia]");
+  document.querySelectorAll<HTMLButtonElement>("[data-copiar]").forEach((boton) => {
+    boton.hidden = false;
+    const textoOriginal = boton.textContent;
+    boton.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(boton.dataset.copiar!);
+        boton.textContent = "Copiado ✓";
+        if (aviso) aviso.textContent = "Copiado al portapapeles.";
+      } catch {
+        // Si el navegador no deja copiar, seleccionamos el texto para copiarlo a mano
+        const p = document.querySelector("[data-texto-enlace]");
+        if (p) window.getSelection()?.selectAllChildren(p);
+        boton.textContent = "Selecciónalo y cópialo";
+      }
+      setTimeout(() => (boton.textContent = textoOriginal), 2500);
+    });
+  });
+</script>

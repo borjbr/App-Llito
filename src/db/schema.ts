@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, index } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, index, primaryKey } from "drizzle-orm/sqlite-core";
 import { relations, sql } from "drizzle-orm";
 
 const timestamps = {
@@ -73,29 +73,65 @@ export const verification = sqliteTable("verification", {
 
 /* ── Familia ──────────────────────────────────────────────────────────── */
 
+/** Un hogar agrupa a la pareja (y más adelante cuidadores) y comparte hijos y datos. */
+export const hogar = sqliteTable("hogar", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  nombre: text("nombre").notNull(),
+  /** Código para invitar a otra persona al hogar */
+  codigoInvitacion: text("codigo_invitacion").notNull().unique(),
+  creadoPor: text("creado_por").references(() => user.id, { onDelete: "set null" }),
+  ...timestamps,
+});
+
+export const miembroHogar = sqliteTable(
+  "miembro_hogar",
+  {
+    hogarId: text("hogar_id")
+      .notNull()
+      .references(() => hogar.id, { onDelete: "cascade" }),
+    /** Cada persona pertenece a un solo hogar */
+    userId: text("user_id")
+      .notNull()
+      .unique()
+      .references(() => user.id, { onDelete: "cascade" }),
+    rol: text("rol", { enum: ["admin", "miembro"] }).notNull().default("miembro"),
+    createdAt: timestamps.createdAt,
+  },
+  (t) => [primaryKey({ columns: [t.hogarId, t.userId] }), index("miembro_hogar_idx").on(t.hogarId)],
+);
+
 export const hijo = sqliteTable(
   "hijo",
   {
     id: text("id")
       .primaryKey()
       .$defaultFn(() => crypto.randomUUID()),
-    userId: text("user_id")
+    hogarId: text("hogar_id")
       .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
+      .references(() => hogar.id, { onDelete: "cascade" }),
     nombre: text("nombre").notNull(),
     orden: integer("orden").notNull().default(0),
     ...timestamps,
   },
-  (t) => [index("hijo_user_idx").on(t.userId)],
+  (t) => [index("hijo_hogar_idx").on(t.hogarId)],
 );
 
-export const userRelations = relations(user, ({ many }) => ({
+export const hogarRelations = relations(hogar, ({ many }) => ({
+  miembros: many(miembroHogar),
   hijos: many(hijo),
 }));
 
+export const miembroHogarRelations = relations(miembroHogar, ({ one }) => ({
+  hogar: one(hogar, { fields: [miembroHogar.hogarId], references: [hogar.id] }),
+  user: one(user, { fields: [miembroHogar.userId], references: [user.id] }),
+}));
+
 export const hijoRelations = relations(hijo, ({ one }) => ({
-  user: one(user, { fields: [hijo.userId], references: [user.id] }),
+  hogar: one(hogar, { fields: [hijo.hogarId], references: [hogar.id] }),
 }));
 
 export type Usuario = typeof user.$inferSelect;
+export type Hogar = typeof hogar.$inferSelect;
 export type Hijo = typeof hijo.$inferSelect;

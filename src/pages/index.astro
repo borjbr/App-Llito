@@ -1,11 +1,12 @@
 ---
 import App from "@/layouts/App.astro";
-import { hijosDe, listaNombres } from "@/lib/familia";
+import { hijosDe, listaNombres, miembrosDe } from "@/lib/familia";
 
 const user = Astro.locals.user!;
-const hijos = await hijosDe(user.id);
+const hogar = Astro.locals.hogar!;
+const [hijos, miembros] = await Promise.all([hijosDe(hogar.id), miembrosDe(hogar.id)]);
 const nombres = hijos.map((h) => h.nombre);
-const bienvenida = Astro.url.searchParams.has("bienvenida");
+const bienvenida = Astro.url.searchParams.get("bienvenida");
 
 const hora = Number(
   new Intl.DateTimeFormat("es-ES", { hour: "numeric", hour12: false, timeZone: "Europe/Madrid" }).format(new Date()),
@@ -24,7 +25,7 @@ const textoHijos =
   {
     bienvenida && (
       <div class="alert alert-ok" role="status">
-        <p>Cuenta creada. Ya puedes empezar a organizaros.</p>
+        <p>{bienvenida === "unido" ? `Te has unido a «${hogar.nombre}». Ya veis los mismos datos.` : "Cuenta creada. Ya puedes empezar a organizaros."}</p>
       </div>
     )
   }
@@ -38,6 +39,18 @@ const textoHijos =
       <h1>{saludo}, {user.name}</h1>
     </div>
   </header>
+
+  <a href="/mi-perfil/familia" class="familia">
+    <span class="flex -space-x-2" aria-hidden="true">
+      {miembros.map((m) => <span class="familia-avatar">{m.avatar}</span>)}
+    </span>
+    <span class="min-w-0">
+      <span class="block font-bold">{hogar.nombre}</span>
+      <span class="block hint">
+        {miembros.length === 1 ? "Solo tú por ahora · Invita a tu pareja" : listaNombres(miembros.map((m) => m.nombre))}
+      </span>
+    </span>
+  </a>
 
   <section aria-labelledby="sec-secciones" class="grid gap-4">
     <h2 id="sec-secciones" class="sr-only">Secciones</h2>
@@ -67,6 +80,29 @@ const textoHijos =
 </App>
 
 <style>
+  .familia {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    padding: 0.75rem 1rem;
+    min-height: var(--tap);
+    border-radius: var(--radius);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    color: var(--ink);
+    text-decoration: none;
+  }
+  .familia:hover { border-color: var(--muted); }
+  .familia-avatar {
+    display: grid;
+    place-items: center;
+    width: 2.4rem;
+    height: 2.4rem;
+    border-radius: 999px;
+    background: var(--surface-2);
+    border: 2px solid var(--surface);
+    font-size: 1.25rem;
+  }
   .seccion {
     display: grid;
     grid-template-columns: auto 1fr auto;

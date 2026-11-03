@@ -1,9 +1,8 @@
 ---
-/** Campos compartidos por el registro y Mi perfil. */
+/** Datos personales y avatar, compartidos por el registro y Mi perfil. */
 import Campo from "./Campo.astro";
 import SelectorAvatar from "./SelectorAvatar.astro";
-import CampoHijos from "./CampoHijos.astro";
-import type { Errores, HijoForm } from "@/lib/validacion";
+import type { Errores } from "@/lib/validacion";
 
 interface Props {
   valores: {
@@ -13,11 +12,9 @@ interface Props {
     avatar?: string;
     edad?: string | number | null;
   };
-  hijos: HijoForm[];
-  tieneHijos: boolean;
   errores: Errores;
 }
-const { valores, hijos, tieneHijos, errores } = Astro.props;
+const { valores, errores } = Astro.props;
 ---
 
 <section class="grid gap-4" aria-labelledby="sec-datos">
@@ -37,7 +34,3 @@ const { valores, hijos, tieneHijos, errores } = Astro.props;
   <SelectorAvatar valor={valores.avatar} error={errores.avatar} />
 </section>
 
-<section class="grid gap-4" aria-labelledby="sec-familia">
-  <h2 id="sec-familia">Familia</h2>
-  <CampoHijos hijos={hijos} tieneHijos={tieneHijos} error={errores.hijos} />
-</section>
