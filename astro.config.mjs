@@ -7,7 +7,16 @@ export default defineConfig({
   output: "server",
   adapter: vercel(),
   site: process.env.BETTER_AUTH_URL,
-  security: { checkOrigin: true },
+  security: {
+    checkOrigin: true,
+    // Dominios en los que Astro se fía de la cabecera Host. Sin esto, en Vercel
+    // Astro cree que la app está en "localhost": el control de origen rechaza
+    // los formularios y Astro.url apunta a un dominio falso.
+    allowedDomains: [
+      { protocol: "https", hostname: "*.vercel.app" }, // producción y previews
+      { hostname: "localhost" }, // astro preview en local
+    ],
+  },
   env: {
     schema: {
       TURSO_DATABASE_URL: envField.string({ context: "server", access: "secret", default: "file:local.db" }),
