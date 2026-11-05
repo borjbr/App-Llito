@@ -1,0 +1,218 @@
+---
+import App from "@/layouts/App.astro";
+import { CATEGORIAS, esCategoria, normalizar, ORDEN_CATEGORIAS, textoEdad } from "@/lib/alimentos";
+import { recetasDe } from "@/lib/recetas";
+
+const hogar = Astro.locals.hogar!;
+const q = Astro.url.searchParams;
+const busqueda = (q.get("q") ?? "").trim().slice(0, 80);
+const catParam = q.get("tipo") ?? "";
+const tipo = esCategoria(catParam) ? catParam : null;
+const ok = q.get("ok");
+
+const todas = await recetasDe(hogar.id);
+const termino = normalizar(busqueda);
+const recetas = todas.filter((r) => {
+  if (tipo && !r.ingredientes.some((i) => i.categoria === tipo)) return false;
+  if (!termino) return true;
+  return normalizar(r.titulo).includes(termino) || r.ingredientes.some((i) => normalizar(i.producto).includes(termino));
+});
+
+// Solo se muestran como filtro los tipos que aparecen en alguna receta
+const tiposUsados = ORDEN_CATEGORIAS.filter((c) => todas.some((r) => r.ingredientes.some((i) => i.categoria === c)));
+const enlace = (t: string | null) => {
+  const p = new URLSearchParams();
+  if (busqueda) p.set("q", busqueda);
+  if (t) p.set("tipo", t);
+  const s = p.toString();
+  return s ? `/hijos/recetas?${s}` : "/hijos/recetas";
+};
+const MENSAJES: Record<string, string> = { borrada: "Receta borrada." };
+---
+
+<App title="Recetario">
+  <header class="grid gap-2">
+    <a href="/hijos" class="btn btn-ghost justify-self-start -ml-3"><span aria-hidden="true">←</span> Hijos</a>
+    <div class="flex items-end justify-between gap-3 flex-wrap">
+      <h1 style="color: var(--hijos);">Recetario</h1>
+      <a href="/hijos/recetas/nueva" class="btn btn-primary"><span aria-hidden="true">＋</span> Nueva receta</a>
+    </div>
+    <p class="text-muted">Las recetas de la familia. Llito, el asistente, también guarda aquí las que te propone.</p>
+  </header>
+
+  {ok && MENSAJES[ok] && <div class="alert alert-ok" role="status"><p>{MENSAJES[ok]}</p></div>}
+
+  {
+    todas.length === 0 ? (
+      <div class="card grid gap-4 justify-items-start vacio">
+        <span class="vacio-icono" aria-hidden="true">🥣</span>
+        <div class="grid gap-1">
+          <h2>Todavía no hay recetas</h2>
+          <p class="text-muted">Apunta las que ya hacéis o pídele una a Llito y se guardará aquí sola.</p>
+        </div>
+        <div class="flex flex-wrap gap-3">
+          <a href="/hijos/recetas/nueva" class="btn btn-primary">Añadir una receta</a>
+          <a href="/asistente?q=Dame%20una%20receta%20de%20pur%C3%A9%20de%20calabaza%20y%20zanahoria" class="btn btn-secondary">
+            <span aria-hidden="true">✨</span> Pedírsela a Llito
+          </a>
+        </div>
+      </div>
+    ) : (
+      <>
+        <form method="get" class="buscador" role="search">
+          {tipo && <input type="hidden" name="tipo" value={tipo} />}
+          <label class="sr-only" for="q">Buscar receta o ingrediente</label>
+          <input class="input" id="q" name="q" type="search" value={busqueda} placeholder="Buscar receta o ingrediente" />
+          <button class="btn btn-secondary" type="submit">Buscar</button>
+        </form>
+
+        {tiposUsados.length > 1 && (
+          <nav aria-label="Filtrar por tipo de ingrediente">
+            <ul class="filtros">
+              <li><a href={enlace(null)} aria-current={!tipo ? "true" : undefined}>Todas</a></li>
+              {tiposUsados.map((c) => (
+                <li>
+                  <a href={enlace(c)} aria-current={tipo === c ? "true" : undefined}>
+                    <span aria-hidden="true">{CATEGORIAS[c].emoji}</span> {CATEGORIAS[c].nombre}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        )}
+
+        <p class="hint" role="status">
+          {recetas.length === todas.length ? `${todas.length} ${todas.length === 1 ? "receta" : "recetas"}` : `${recetas.length} de ${todas.length} recetas`}
+        </p>
+
+        {recetas.length === 0 ? (
+          <div class="card grid gap-3 justify-items-start">
+            <p>No hay recetas que coincidan.</p>
+            <a href="/hijos/recetas" class="btn btn-secondary">Ver todas</a>
+          </div>
+        ) : (
+          <ul class="grid gap-3 list-none p-0 m-0">
+            {recetas.map((r) => {
+              const emojis = [...new Set(r.ingredientes.map((i) => CATEGORIAS[i.categoria].emoji))].slice(0, 4);
+              const meta = [textoEdad(r.edadMeses), r.minutos && `${r.minutos} min`, r.raciones].filter(Boolean);
+              return (
+                <li>
+                  <a href={`/hijos/recetas/${r.id}`} class="receta">
+                    <span class="receta-emojis" aria-hidden="true">{emojis.join("")}</span>
+                    <span class="grid gap-1 min-w-0">
+                      <span class="receta-titulo">{r.titulo}</span>
+                      <span class="hint receta-ingredientes">{r.ingredientes.map((i) => i.producto).join(", ")}</span>
+                      {(meta.length > 0 || r.origen === "asistente") && (
+                        <span class="flex flex-wrap gap-2">
+                          {meta.map((m) => <span class="chip">{m}</span>)}
+                          {r.origen === "asistente" && <span class="chip chip-llito"><span aria-hidden="true">✨</span> De Llito</span>}
+                        </span>
+                      )}
+                    </span>
+                    <span class="receta-flecha" aria-hidden="true">→</span>
+                  </a>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </>
+    )
+  }
+</App>
+
+<style>
+  .vacio-icono {
+    display: grid;
+    place-items: center;
+    width: 3.5rem;
+    height: 3.5rem;
+    border-radius: 18px;
+    background: var(--hijos-soft);
+    font-size: 1.9rem;
+  }
+  .buscador {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0.5rem;
+  }
+  .filtros {
+    list-style: none;
+    margin: 0;
+    padding: 0 0 0.25rem;
+    display: flex;
+    gap: 0.5rem;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+  .filtros a {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-height: 2.75rem;
+    padding: 0.4rem 0.9rem;
+    border-radius: 999px;
+    border: 2px solid var(--line);
+    background: var(--surface);
+    color: var(--ink);
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 0.92rem;
+    white-space: nowrap;
+  }
+  .filtros a:hover { border-color: var(--muted); }
+  .filtros a[aria-current] {
+    border-color: var(--hijos);
+    background: var(--hijos-soft);
+    color: var(--hijos);
+  }
+  .receta {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 0.9rem;
+    padding: 1rem;
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    color: var(--ink);
+    text-decoration: none;
+  }
+  .receta:hover { border-color: var(--hijos); }
+  .receta-emojis {
+    display: grid;
+    place-items: center;
+    min-width: 3.25rem;
+    height: 3.25rem;
+    padding-inline: 0.4rem;
+    border-radius: 16px;
+    background: var(--hijos-soft);
+    font-size: 1.25rem;
+    letter-spacing: -0.15em;
+  }
+  .receta-titulo {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 1.12rem;
+    line-height: 1.2;
+  }
+  .receta-ingredientes {
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .receta-flecha { color: var(--hijos); font-weight: 700; font-size: 1.2rem; }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.1rem 0.6rem;
+    border-radius: 999px;
+    background: var(--surface-2);
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--muted);
+  }
+  .chip-llito { background: var(--accent-soft); color: var(--accent); }
+</style>

@@ -1,0 +1,407 @@
+---
+import App from "@/layouts/App.astro";
+import type { UIMessage } from "ai";
+import { and, eq } from "drizzle-orm";
+import { OPENAI_API_KEY } from "astro:env/server";
+import { db } from "@/db/client";
+import { memoria, mensajeChat } from "@/db/schema";
+import { historialDe, MAX_MENSAJE } from "@/lib/asistente";
+import { hijosDe } from "@/lib/familia";
+import { paraChat, recetasDe } from "@/lib/recetas";
+
+const usuario = Astro.locals.user!;
+const hogar = Astro.locals.hogar!;
+const configurado = Boolean(OPENAI_API_KEY);
+
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  const accion = String(form.get("accion") ?? "");
+  if (accion === "nueva") {
+    await db.delete(mensajeChat).where(eq(mensajeChat.userId, usuario.id));
+    return Astro.redirect("/asistente?ok=nueva", 303);
+  }
+  if (accion === "olvidar") {
+    await db.delete(memoria).where(and(eq(memoria.id, String(form.get("id") ?? "")), eq(memoria.hogarId, hogar.id)));
+    return Astro.redirect("/asistente?ok=olvidado#memoria", 303);
+  }
+}
+
+const [historial, recetas, memorias, hijos] = await Promise.all([
+  historialDe(usuario.id, 40),
+  recetasDe(hogar.id),
+  db.select().from(memoria).where(eq(memoria.hogarId, hogar.id)),
+  hijosDe(hogar.id),
+]);
+
+// Las tarjetas de receta del historial se pintan con la versión actual del recetario
+const porId = new Map(recetas.map((r) => [r.id, r]));
+const mensajes: UIMessage[] = historial.map((m) => ({
+  ...m,
+  parts: m.parts.map((p) => {
+    const t = p as { type: string; state?: string; output?: { id?: string; estado?: string } };
+    if ((t.type === "tool-mostrar_receta" || t.type === "tool-guardar_receta") && t.state === "output-available" && t.output?.id) {
+      const actual = porId.get(t.output.id);
+      return { ...p, output: actual ? { ...paraChat(actual), estado: t.output.estado } : { error: "Receta borrada" } } as typeof p;
+    }
+    return p;
+  }),
+}));
+const datosChat = JSON.stringify(mensajes).replace(/</g, "\\u003c");
+
+const bebe = hijos[0]?.nombre;
+const sugerencias = [
+  "Dame una receta de puré de calabaza y zanahoria",
+  bebe ? `¿Qué frutas puede tomar ${bebe} para empezar?` : "¿Con qué frutas se empieza la alimentación complementaria?",
+  "Ideas de cenas rápidas para nosotros dos",
+  "Organiza una lista de la compra para la semana",
+];
+const ok = Astro.url.searchParams.get("ok");
+---
+
+<App title="Llito">
+  <div class="chat" data-chat>
+    <header class="chat-cabecera">
+      <span class="llito-grande" aria-hidden="true">✨</span>
+      <div class="grid gap-0.5 min-w-0">
+        <h1>Llito</h1>
+        <p class="hint">El asistente de {hogar.nombre}. Recuerda vuestras recetas y lo que le cuentes.</p>
+      </div>
+      {
+        historial.length > 0 && (
+          <form method="post" class="chat-nueva">
+            <input type="hidden" name="accion" value="nueva" />
+            <button class="btn btn-ghost" type="submit">Nueva conversación</button>
+          </form>
+        )
+      }
+    </header>
+
+    {ok === "nueva" && <div class="alert alert-ok" role="status"><p>Conversación nueva. Las recetas y lo que Llito recuerda se mantienen.</p></div>}
+
+    <details class="memoria" id="memoria" open={ok === "olvidado" ? true : undefined}>
+      <summary>
+        <span aria-hidden="true">🧠</span> Lo que Llito recuerda de la familia
+        <span class="memoria-total">{memorias.length}</span>
+      </summary>
+      {
+        memorias.length === 0 ? (
+          <p class="hint">Todavía nada. Cuéntale cosas como «Carmen ya ha probado la calabaza» o «no le sienta bien el kiwi» y las tendrá en cuenta.</p>
+        ) : (
+          <ul class="memoria-lista">
+            {memorias.map((m) => (
+              <li>
+                <span>{m.texto}</span>
+                <form method="post">
+                  <input type="hidden" name="accion" value="olvidar" />
+                  <input type="hidden" name="id" value={m.id} />
+                  <button class="btn btn-ghost memoria-olvidar" type="submit" aria-label={`Olvidar: ${m.texto}`}>Olvidar</button>
+                </form>
+              </li>
+            ))}
+          </ul>
+        )
+      }
+      <p class="hint">Las recetas que guarda están en <a href="/hijos/recetas">el recetario</a>.</p>
+    </details>
+
+    <section aria-label="Conversación" class="conversacion">
+      {
+        historial.length === 0 && (
+          <div class="bienvenida" data-bienvenida>
+            <p class="bienvenida-titulo">Hola, {usuario.name}. ¿En qué te ayudo?</p>
+            <p class="text-muted">Pídeme recetas (las guardo en el recetario para que siempre sean las mismas), ideas para la semana o cualquier duda del día a día.</p>
+            {
+              configurado && (
+                <ul class="sugerencias">
+                  {sugerencias.map((s) => (
+                    <li><button type="button" class="sugerencia" data-sugerencia={s}>{s}</button></li>
+                  ))}
+                </ul>
+              )
+            }
+          </div>
+        )
+      }
+      <ol class="mensajes" data-mensajes></ol>
+      <p class="sr-only" role="status" aria-live="polite" data-estado></p>
+    </section>
+
+    {
+      configurado ? (
+        <div class="composer-zona">
+          <form class="composer" data-composer>
+            <label for="mensaje" class="sr-only">Escribe a Llito</label>
+            <textarea id="mensaje" data-campo rows="1" maxlength={MAX_MENSAJE} placeholder="Pregúntale lo que quieras…" enterkeyhint="send" autocomplete="off" />
+            <button class="composer-enviar" type="submit" data-enviar aria-label="Enviar" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
+            </button>
+          </form>
+          <p class="hint composer-aviso">Llito puede equivocarse. Para dudas de salud, consulta con el pediatra.</p>
+        </div>
+      ) : (
+        <div class="card grid gap-2">
+          <h2>El asistente aún no está configurado</h2>
+          <p class="text-muted">Falta añadir la variable <code>OPENAI_API_KEY</code> en Vercel (Settings → Environment Variables) y volver a desplegar.</p>
+        </div>
+      )
+    }
+    <noscript><p class="alert alert-error">El chat necesita JavaScript activado.</p></noscript>
+    <script is:inline type="application/json" id="datos-chat" set:html={datosChat} />
+  </div>
+</App>
+
+<script>
+  import { iniciarChat } from "@/scripts/chat";
+  const raiz = document.querySelector<HTMLElement>("[data-chat]");
+  if (raiz) iniciarChat(raiz);
+</script>
+
+<style>
+  .chat { display: grid; gap: 1.25rem; }
+  .chat-cabecera {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 0.9rem;
+  }
+  .llito-grande {
+    display: grid;
+    place-items: center;
+    width: 3.25rem;
+    height: 3.25rem;
+    border-radius: 18px;
+    font-size: 1.6rem;
+    background: linear-gradient(135deg, var(--accent-soft), var(--hijos-soft));
+  }
+  .chat-nueva .btn { padding-inline: 0.6rem; font-size: 0.92rem; }
+
+  .memoria {
+    border-radius: var(--radius);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    padding: 0 1rem;
+  }
+  .memoria summary {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: var(--tap);
+    cursor: pointer;
+    font-weight: 700;
+  }
+  .memoria[open] { padding-bottom: 1rem; }
+  .memoria[open] > :not(summary) + :not(summary) { margin-top: 0.75rem; }
+  .memoria-total {
+    margin-left: auto;
+    min-width: 1.75rem;
+    padding: 0 0.5rem;
+    border-radius: 999px;
+    background: var(--surface-2);
+    text-align: center;
+    font-size: 0.85rem;
+  }
+  .memoria-lista { list-style: none; margin: 0; padding: 0; display: grid; }
+  .memoria-lista li {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.35rem 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .memoria-olvidar { color: var(--danger); font-size: 0.9rem; }
+  .memoria-olvidar:hover { background: var(--danger-soft); }
+
+  .conversacion { display: grid; gap: 1rem; }
+  .bienvenida {
+    display: grid;
+    gap: 0.75rem;
+    padding: 1.5rem 1.25rem;
+    border-radius: var(--radius-lg);
+    background: linear-gradient(135deg, var(--accent-soft), var(--hijos-soft));
+  }
+  .bienvenida-titulo { font-family: var(--font-display); font-size: 1.5rem; font-weight: 700; line-height: 1.2; }
+  .sugerencias { list-style: none; margin: 0.25rem 0 0; padding: 0; display: grid; gap: 0.5rem; }
+  @media (min-width: 560px) { .sugerencias { grid-template-columns: 1fr 1fr; } }
+  .sugerencia {
+    width: 100%;
+    min-height: var(--tap);
+    padding: 0.6rem 0.9rem;
+    border-radius: var(--radius);
+    border: 1px solid transparent;
+    background: var(--surface);
+    color: var(--ink);
+    font: inherit;
+    font-size: 0.95rem;
+    text-align: left;
+    cursor: pointer;
+  }
+  .sugerencia:hover { border-color: var(--accent); }
+
+  .composer-zona {
+    position: sticky;
+    bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px));
+    z-index: 10;
+    display: grid;
+    gap: 0.35rem;
+    padding-top: 0.5rem;
+    background: linear-gradient(to bottom, transparent, var(--bg) 0.75rem);
+  }
+  @media (min-width: 768px) { .composer-zona { bottom: 1rem; } }
+  .composer {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: end;
+    gap: 0.5rem;
+    padding: 0.4rem 0.4rem 0.4rem 1rem;
+    border-radius: 26px;
+    background: var(--surface);
+    border: 2px solid var(--line);
+    box-shadow: 0 6px 24px rgb(0 0 0 / 0.08);
+  }
+  .composer:focus-within { border-color: var(--accent); }
+  .composer textarea {
+    resize: none;
+    border: 0;
+    background: transparent;
+    color: var(--ink);
+    font: inherit;
+    line-height: 1.45;
+    padding: 0.55rem 0;
+    max-height: 200px;
+    outline: none;
+  }
+  .composer:has(textarea:focus-visible) { outline: 3px solid var(--focus); outline-offset: 2px; }
+  .composer-enviar {
+    display: grid;
+    place-items: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: 999px;
+    border: 0;
+    background: var(--accent);
+    color: var(--accent-ink);
+    cursor: pointer;
+    transition: opacity 0.15s, transform 0.08s;
+  }
+  .composer-enviar:active { transform: scale(0.94); }
+  .composer-enviar:disabled { opacity: 0.35; cursor: not-allowed; }
+  .composer-enviar svg { width: 1.3rem; height: 1.3rem; }
+  .composer-aviso { text-align: center; font-size: 0.8rem; }
+
+  /* Mensajes (los crea el JavaScript, por eso van como globales dentro de .chat) */
+  .chat :global(.mensajes) { list-style: none; margin: 0; padding: 0; display: grid; gap: 1.1rem; }
+  .chat :global(.msg-usuario) { display: flex; justify-content: flex-end; }
+  .chat :global(.burbuja) {
+    max-width: 85%;
+    padding: 0.65rem 1rem;
+    border-radius: 20px 20px 6px 20px;
+    background: var(--accent);
+    color: var(--accent-ink);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .chat :global(.msg-llito) { display: grid; grid-template-columns: auto 1fr; gap: 0.6rem; align-items: start; }
+  .chat :global(.avatar-llito) {
+    display: grid;
+    place-items: center;
+    width: 2.1rem;
+    height: 2.1rem;
+    border-radius: 12px;
+    background: linear-gradient(135deg, var(--accent-soft), var(--hijos-soft));
+    font-size: 1rem;
+  }
+  .chat :global(.contenido) { display: grid; gap: 0.75rem; min-width: 0; padding-top: 0.2rem; }
+  .chat :global(.texto) { display: grid; gap: 0.6rem; overflow-wrap: anywhere; }
+  .chat :global(.texto ul), .chat :global(.texto ol) { margin: 0; padding-left: 1.25rem; display: grid; gap: 0.25rem; }
+  .chat :global(.texto code) { background: var(--surface-2); padding: 0.05rem 0.35rem; border-radius: 6px; font-size: 0.92em; }
+  .chat :global(.nota-memoria) {
+    justify-self: start;
+    padding: 0.3rem 0.8rem;
+    border-radius: 999px;
+    background: var(--surface-2);
+    font-size: 0.88rem;
+    color: var(--muted);
+  }
+  .chat :global(.trabajando) { display: flex; align-items: center; gap: 0.5rem; color: var(--muted); font-size: 0.95rem; }
+  .chat :global(.trabajando-punto) {
+    width: 0.6rem;
+    height: 0.6rem;
+    border-radius: 999px;
+    background: var(--accent);
+    animation: latido 1s ease-in-out infinite;
+  }
+  .chat :global(.escribiendo) { display: flex; gap: 0.3rem; padding: 0.6rem 0; }
+  .chat :global(.escribiendo span) {
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 999px;
+    background: var(--muted);
+    animation: latido 1.2s ease-in-out infinite;
+  }
+  .chat :global(.escribiendo span:nth-child(2)) { animation-delay: 0.15s; }
+  .chat :global(.escribiendo span:nth-child(3)) { animation-delay: 0.3s; }
+  @keyframes latido {
+    0%, 100% { opacity: 0.25; transform: scale(0.85); }
+    50% { opacity: 1; transform: scale(1); }
+  }
+  .chat :global(.error-chat) {
+    padding: 0.7rem 0.9rem;
+    border-radius: var(--radius);
+    background: var(--danger-soft);
+    color: var(--danger);
+    font-weight: 700;
+  }
+
+  /* Tarjeta de receta */
+  .chat :global(.tarjeta-receta) {
+    display: grid;
+    gap: 0.6rem;
+    padding: 1.1rem;
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-top: 4px solid var(--hijos);
+  }
+  .chat :global(.tr-cabecera) { display: grid; grid-template-columns: auto 1fr; gap: 0.8rem; align-items: start; }
+  .chat :global(.tr-emojis) {
+    display: grid;
+    place-items: center;
+    min-width: 3rem;
+    height: 3rem;
+    padding-inline: 0.35rem;
+    border-radius: 14px;
+    background: var(--hijos-soft);
+    font-size: 1.2rem;
+    letter-spacing: -0.15em;
+  }
+  .chat :global(.tr-titulos) { display: grid; gap: 0.15rem; min-width: 0; }
+  .chat :global(.tr-etiqueta) { font-size: 0.8rem; font-weight: 700; color: var(--hijos); text-transform: uppercase; letter-spacing: 0.04em; }
+  .chat :global(.tr-titulo) { font-size: 1.2rem; }
+  .chat :global(.tr-descripcion) { color: var(--muted); font-size: 0.95rem; }
+  .chat :global(.tr-meta) { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.4rem; }
+  .chat :global(.tr-meta li) { padding: 0.15rem 0.65rem; border-radius: 999px; background: var(--surface-2); font-size: 0.85rem; font-weight: 700; }
+  .chat :global(.tarjeta-receta h4) { margin: 0.35rem 0 0; font-family: var(--font-display); font-size: 1rem; }
+  .chat :global(.tr-ingredientes) { list-style: none; margin: 0; padding: 0; display: grid; }
+  .chat :global(.tr-ingredientes li) {
+    display: grid;
+    grid-template-columns: 1.5rem 1fr auto;
+    gap: 0.5rem;
+    padding: 0.35rem 0;
+    border-bottom: 1px dashed var(--line);
+  }
+  .chat :global(.tr-producto) { font-weight: 700; }
+  .chat :global(.tr-cantidad) { color: var(--muted); text-align: right; }
+  .chat :global(.tr-pasos) { margin: 0; padding-left: 1.3rem; display: grid; gap: 0.4rem; }
+  .chat :global(.tr-pasos li::marker) { color: var(--hijos); font-weight: 700; }
+  .chat :global(.tr-aviso) {
+    padding: 0.6rem 0.8rem;
+    border-radius: var(--radius);
+    background: var(--aviso-soft);
+    border: 1px solid var(--aviso);
+    font-size: 0.92rem;
+  }
+  .chat :global(.tr-aviso ul) { margin: 0.25rem 0 0; padding-left: 1.1rem; }
+  .chat :global(.tr-notas) { font-size: 0.95rem; }
+  .chat :global(.tr-enlace) { justify-self: start; font-weight: 700; padding-block: 0.4rem; }
+</style>

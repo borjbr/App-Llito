@@ -25,6 +25,10 @@ export default defineConfig({
       BETTER_AUTH_URL: envField.string({ context: "server", access: "secret", optional: true }),
       GOOGLE_CLIENT_ID: envField.string({ context: "server", access: "secret", optional: true }),
       GOOGLE_CLIENT_SECRET: envField.string({ context: "server", access: "secret", optional: true }),
+      // Asistente (OpenAI). Sin clave, el chat se muestra como «no configurado».
+      OPENAI_API_KEY: envField.string({ context: "server", access: "secret", optional: true }),
+      OPENAI_MODEL: envField.string({ context: "server", access: "secret", default: "gpt-5.4-mini" }),
+      ASISTENTE_LIMITE_DIARIO: envField.number({ context: "server", access: "secret", default: 100, int: true, gt: 0 }),
     },
   },
   vite: {

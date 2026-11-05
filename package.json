@@ -22,9 +22,11 @@
   },
   "homepage": "https://github.com/borjbr/app-llito#readme",
   "dependencies": {
+    "@ai-sdk/openai": "^4.0.109",
     "@astrojs/vercel": "^8.2.11",
     "@libsql/client": "^0.18.0",
     "@tailwindcss/vite": "^4.3.4",
+    "ai": "^7.0.163",
     "astro": "^5.18.2",
     "better-auth": "^1.7.15",
     "drizzle-orm": "^0.45.4",

@@ -1,8 +1,15 @@
 ---
 import App from "@/layouts/App.astro";
 import { hijosDe } from "@/lib/familia";
+import { db } from "@/db/client";
+import { receta } from "@/db/schema";
+import { count, eq } from "drizzle-orm";
 
-const hijos = await hijosDe(Astro.locals.hogar!.id);
+const hogar = Astro.locals.hogar!;
+const [hijos, [{ total }]] = await Promise.all([
+  hijosDe(hogar.id),
+  db.select({ total: count() }).from(receta).where(eq(receta.hogarId, hogar.id)),
+]);
 ---
 
 <App title="Hijos">
@@ -33,4 +40,49 @@ const hijos = await hijosDe(Astro.locals.hogar!.id);
       </ul>
     )
   }
+
+  <a href="/hijos/recetas" class="recetario">
+    <span class="recetario-icono" aria-hidden="true">🥣</span>
+    <span class="grid gap-1">
+      <span class="recetario-titulo">Recetario</span>
+      <span>
+        {total === 0 ? "Purés, papillas y comidas de la familia." : `${total} ${total === 1 ? "receta guardada" : "recetas guardadas"} · Purés, papillas y comidas.`}
+      </span>
+    </span>
+    <span class="recetario-flecha" aria-hidden="true">→</span>
+  </a>
 </App>
+
+<style>
+  .recetario {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.25rem;
+    border-radius: var(--radius-lg);
+    background: var(--hijos-soft);
+    color: var(--ink);
+    text-decoration: none;
+    border: 2px solid transparent;
+    transition: border-color 0.15s, transform 0.1s;
+  }
+  .recetario:hover { border-color: var(--hijos); }
+  .recetario:active { transform: scale(0.99); }
+  .recetario-icono {
+    display: grid;
+    place-items: center;
+    width: 3.5rem;
+    height: 3.5rem;
+    border-radius: 18px;
+    background: var(--surface);
+    font-size: 1.9rem;
+  }
+  .recetario-titulo {
+    font-family: var(--font-display);
+    font-size: 1.45rem;
+    font-weight: 700;
+    color: var(--hijos);
+  }
+  .recetario-flecha { font-size: 1.4rem; color: var(--hijos); font-weight: 700; }
+</style>
