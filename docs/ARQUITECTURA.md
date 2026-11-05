@@ -13,6 +13,7 @@ App web familiar para organizar el hogar y el cuidado de los hijos. Pensada prim
 | Autenticación | Better Auth (email y contraseña) | Sesiones en nuestra propia BD, sin servicios externos |
 | Validación | Zod | Mensajes de error en español y de servidor |
 | Interactividad | Scripts pequeños de Astro; Preact en islands cuando haga falta (gráficas, temporizadores) | Mínimo JavaScript en el móvil |
+| Asistente | Vercel AI SDK + OpenAI (`gpt-5.4-mini` por defecto) | Único servicio de pago; con límite diario por hogar |
 | Despliegue | Vercel (previews por PR) | Gratis para uso personal |
 
 ## Principios
@@ -26,12 +27,14 @@ App web familiar para organizar el hogar y el cuidado de los hijos. Pensada prim
 
 ```
 src/
-├── pages/           login, registro, inicio (/), hogar/, hijos/, mi-perfil, salir
-│   └── api/auth/    endpoints de Better Auth
+├── pages/           login, registro, inicio (/), hogar/, hijos/ (y recetas/), asistente, mi-perfil, salir
+│   ├── api/auth/    endpoints de Better Auth
+│   └── api/chat.ts  chat del asistente
 ├── layouts/         Base (HTML), Auth (pantallas de acceso), App (menú inferior)
 ├── components/      campos de formulario, selector de avatar, lista de hijos
 ├── db/              schema.ts (tablas) y client.ts (conexión)
 ├── lib/             auth, validación, avatares, utilidades de familia
+├── scripts/         JavaScript de cliente (chat)
 ├── styles/          tokens y componentes CSS
 └── middleware.ts    sesión y protección de rutas
 drizzle/             migraciones SQL
@@ -61,6 +64,26 @@ docs/                este documento
 - **Google → App**: sincronización incremental con `syncToken` al abrir la agenda (como mucho una vez por minuto) o con «Sincronizar ahora». Los eventos llevan `llitoId` y `llitoTipo` en `extendedProperties` para reconocerlos.
 - Los avisos son los recordatorios de Google Calendar: llegan como notificación nativa a cada móvil sin necesidad de un servidor de notificaciones propio.
 - Guía de configuración: [GOOGLE-CALENDAR.md](GOOGLE-CALENDAR.md).
+
+### Recetario
+
+- Tabla `receta` (del hogar): título, `clave` (título normalizado, único por hogar para no duplicar), descripción, edad mínima en meses, minutos, raciones, pasos (uno por línea), notas y `origen` (`familia` o `asistente`).
+- Tabla `ingrediente_receta`: categoría, producto, cantidad y orden.
+- Catálogo de alimentos en `src/lib/alimentos.ts`: categorías con sus productos y avisos para bebés (miel, sal, espinacas, uvas enteras…). El formulario usa dos selects encadenados (tipo → ingrediente) con «Otro» para escribir uno nuevo; sin JavaScript, el select de ingrediente muestra todo el catálogo agrupado.
+- Si un producto está en el catálogo, su categoría y su nombre los pone el catálogo.
+
+### Asistente Llito
+
+- `POST /api/chat` recibe solo el mensaje nuevo; el historial se lee de `mensaje_chat` (cada persona tiene su conversación) y se responde con el stream de mensajes del AI SDK.
+- **La memoria vive en la base de datos, no en el modelo.** El recetario es la fuente de verdad: el modelo tiene la lista de recetas en sus instrucciones y usa herramientas:
+  - `mostrar_receta(id)`: la app pinta la receta guardada como tarjeta, sin que el modelo la reescriba. Por eso pedir la misma receta dos veces devuelve exactamente la misma.
+  - `guardar_receta(...)`: crea o sustituye una receta (con `origen = asistente`).
+  - `buscar_recetas(texto)`: para recetarios grandes.
+  - `recordar(texto)` / `olvidar(id)`: datos duraderos de la familia en la tabla `memoria`, que se ven y se borran desde `/asistente`.
+- Instrucciones fijas con pautas de alimentación complementaria (AEP/AESAN) y aviso de consultar al pediatra.
+- `store: false` en OpenAI: la conversación no se guarda en sus servidores. Sin razonamientos ni metadatos del proveedor en la BD.
+- Límite de mensajes por hogar cada 24 horas (`ASISTENTE_LIMITE_DIARIO`, 100 por defecto) y como mucho 6 pasos de herramientas por respuesta.
+- Cliente sin framework (`src/scripts/chat.ts`, ~9 KB): lee el stream SSE, pinta texto (markdown mínimo que escapa todo el HTML) y tarjetas, y anuncia la respuesta a los lectores de pantalla.
 
 ## Próximos pasos
 

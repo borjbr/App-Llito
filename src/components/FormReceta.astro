@@ -1,0 +1,213 @@
+---
+/**
+ * Formulario de receta. Los ingredientes se eligen con dos selects encadenados
+ * (tipo → ingrediente). Sin JavaScript sigue funcionando: el select de
+ * ingrediente muestra todo el catálogo agrupado por tipo.
+ */
+import Campo from "./Campo.astro";
+import FilaIng from "./FilaIngrediente.astro";
+import ResumenErrores from "./ResumenErrores.astro";
+import { CATEGORIAS, EDADES, ORDEN_CATEGORIAS } from "@/lib/alimentos";
+import { filaVacia, LIMITES, OTRO, type ValoresReceta } from "@/lib/recetas";
+import type { Errores } from "@/lib/validacion";
+
+interface Props {
+  valores: ValoresReceta;
+  errores: Errores;
+  textoBoton: string;
+}
+const { valores: v, errores, textoBoton } = Astro.props;
+
+const ETIQUETAS = { titulo: "Nombre", descripcion: "Descripción", edad_meses: "Edad", minutos: "Tiempo", raciones: "Raciones", ingredientes: "Ingredientes", pasos: "Preparación", notas: "Notas" };
+const catalogo = Object.fromEntries(ORDEN_CATEGORIAS.map((c) => [c, CATEGORIAS[c].productos.map((p) => p.nombre)]));
+const filas = v.ingredientes.length > 0 ? v.ingredientes : [filaVacia()];
+---
+
+<form method="post" class="card grid gap-6" novalidate data-form-receta data-catalogo={JSON.stringify(catalogo)} data-otro={OTRO}>
+  <ResumenErrores errores={errores} etiquetas={ETIQUETAS} />
+
+  <Campo id="titulo" label="Nombre de la receta" value={v.titulo} error={errores.titulo} hint="Por ejemplo: Puré de calabaza y zanahoria" />
+
+  <div class="field">
+    <label class="label" for="descripcion">Descripción (opcional)</label>
+    <input class="input" id="descripcion" name="descripcion" value={v.descripcion} maxlength={LIMITES.descripcion} aria-invalid={errores.descripcion ? "true" : undefined} />
+    {errores.descripcion && <p class="field-error">{errores.descripcion}</p>}
+  </div>
+
+  <div class="grid gap-4 sm:grid-cols-3 items-start">
+    <div class="field">
+      <label class="label" for="edad_meses">Edad</label>
+      <select class="input" id="edad_meses" name="edad_meses" aria-invalid={errores.edad_meses ? "true" : undefined}>
+        <option value="">Toda la familia</option>
+        {EDADES.map((e) => <option value={e.meses} selected={v.edadMeses === String(e.meses)}>{e.txt}</option>)}
+      </select>
+      {errores.edad_meses && <p class="field-error">{errores.edad_meses}</p>}
+    </div>
+    <Campo id="minutos" label="Tiempo (minutos)" type="number" inputmode="numeric" value={v.minutos} error={errores.minutos} required={false} min={1} max={1440} />
+    <Campo id="raciones" label="Raciones (opcional)" value={v.raciones} error={errores.raciones} required={false} hint="Ej.: 4 tomas" />
+  </div>
+
+  <fieldset class="grid gap-3" aria-describedby={errores.ingredientes ? "ingredientes-error" : undefined}>
+    <legend class="label text-lg" id="ingredientes">Ingredientes</legend>
+    <p class="hint">Elige primero el tipo y después el ingrediente. Si no está en la lista, elige «Otro» y escríbelo.</p>
+    {errores.ingredientes && <p class="field-error" id="ingredientes-error">{errores.ingredientes}</p>}
+
+    <ol class="ingredientes" data-lista>
+      {filas.map((f, n) => <FilaIng fila={f} n={n} />)}
+    </ol>
+
+    <template data-plantilla>
+      <FilaIng fila={filaVacia()} n={-1} />
+    </template>
+
+    <button type="button" class="btn btn-secondary justify-self-start" data-anadir hidden>
+      <span aria-hidden="true">＋</span> Añadir ingrediente
+    </button>
+    <noscript><p class="hint">Para añadir más ingredientes, guarda la receta y vuelve a editarla.</p></noscript>
+  </fieldset>
+
+  <div class="field">
+    <label class="label" for="pasos">Preparación</label>
+    <p class="hint" id="pasos-hint">Un paso por línea.</p>
+    <textarea
+      class="input"
+      id="pasos"
+      name="pasos"
+      rows="6"
+      aria-invalid={errores.pasos ? "true" : undefined}
+      aria-describedby={["pasos-hint", errores.pasos && "pasos-error"].filter(Boolean).join(" ")}
+      placeholder={"Pela y trocea las verduras.\nCuécelas al vapor 20 minutos.\nTritura con un chorrito de aceite de oliva."}
+    >{v.pasos}</textarea>
+    {errores.pasos && <p class="field-error" id="pasos-error">{errores.pasos}</p>}
+  </div>
+
+  <div class="field">
+    <label class="label" for="notas">Notas (opcional)</label>
+    <textarea class="input" id="notas" name="notas" rows="3" maxlength={LIMITES.notas} aria-invalid={errores.notas ? "true" : undefined} placeholder="Se congela bien en raciones. A Carmen le gusta más con poca agua.">{v.notas}</textarea>
+    {errores.notas && <p class="field-error">{errores.notas}</p>}
+  </div>
+
+  <slot name="antes-del-boton" />
+  <button class="btn btn-primary btn-block" type="submit">{textoBoton}</button>
+</form>
+
+<script>
+  document.querySelectorAll<HTMLFormElement>("[data-form-receta]").forEach((form) => {
+    const catalogo: Record<string, string[]> = JSON.parse(form.dataset.catalogo ?? "{}");
+    const OTRO = form.dataset.otro ?? "__otro";
+    const lista = form.querySelector<HTMLOListElement>("[data-lista]")!;
+    const plantilla = form.querySelector<HTMLTemplateElement>("[data-plantilla]")!;
+    const anadir = form.querySelector<HTMLButtonElement>("[data-anadir]")!;
+    const completo = plantilla.content.querySelector("[data-producto]")!.innerHTML;
+    const categoriaDe = (producto: string) => Object.keys(catalogo).find((c) => catalogo[c].includes(producto)) ?? "";
+    let contador = lista.children.length;
+
+    function opcion(valor: string, texto: string, seleccionada: boolean) {
+      const o = document.createElement("option");
+      o.value = valor;
+      o.textContent = texto;
+      o.selected = seleccionada;
+      return o;
+    }
+
+    /** Rehace el select de ingrediente con los productos del tipo elegido */
+    function filtrar(fila: HTMLElement) {
+      const cat = fila.querySelector<HTMLSelectElement>("[data-categoria]")!;
+      const prod = fila.querySelector<HTMLSelectElement>("[data-producto]")!;
+      const actual = prod.value;
+      if (!cat.value) {
+        // Sin tipo: el catálogo completo agrupado
+        prod.innerHTML = completo;
+        prod.value = actual;
+        return;
+      }
+      const productos = catalogo[cat.value] ?? [];
+      prod.replaceChildren(
+        opcion("", "Elige…", !actual || (actual !== OTRO && !productos.includes(actual))),
+        ...productos.map((p) => opcion(p, p, p === actual)),
+        opcion(OTRO, "Otro (escribir)", actual === OTRO),
+      );
+    }
+
+    function actualizarOtro(fila: HTMLElement) {
+      const prod = fila.querySelector<HTMLSelectElement>("[data-producto]")!;
+      const otro = fila.querySelector<HTMLElement>("[data-campo-otro]")!;
+      otro.hidden = prod.value !== OTRO;
+    }
+
+    function numerar() {
+      lista.querySelectorAll<HTMLElement>("[data-fila]").forEach((fila, i) => {
+        fila.querySelector("[data-numero]")!.textContent = `Ingrediente ${i + 1}`;
+        fila.querySelector<HTMLButtonElement>("[data-quitar]")!.setAttribute("aria-label", `Quitar ingrediente ${i + 1}`);
+      });
+    }
+
+    function preparar(fila: HTMLElement) {
+      fila.querySelector<HTMLButtonElement>("[data-quitar]")!.hidden = false;
+      filtrar(fila);
+      actualizarOtro(fila);
+    }
+
+    lista.querySelectorAll<HTMLElement>("[data-fila]").forEach(preparar);
+    anadir.hidden = false;
+    numerar();
+
+    form.addEventListener("change", (e) => {
+      const el = e.target as HTMLElement;
+      const fila = el.closest<HTMLElement>("[data-fila]");
+      if (!fila) return;
+      if (el.matches("[data-categoria]")) {
+        filtrar(fila);
+        actualizarOtro(fila);
+      }
+      if (el.matches("[data-producto]")) {
+        const prod = el as HTMLSelectElement;
+        const cat = fila.querySelector<HTMLSelectElement>("[data-categoria]")!;
+        if (!cat.value && prod.value && prod.value !== OTRO) {
+          cat.value = categoriaDe(prod.value);
+          filtrar(fila);
+        }
+        actualizarOtro(fila);
+        if (prod.value === OTRO) fila.querySelector<HTMLInputElement>('[name="ing_otro"]')?.focus();
+      }
+    });
+
+    anadir.addEventListener("click", () => {
+      const html = plantilla.innerHTML.replace(/__N__/g, String(contador++));
+      lista.insertAdjacentHTML("beforeend", html);
+      const nueva = lista.lastElementChild as HTMLElement;
+      preparar(nueva);
+      numerar();
+      nueva.querySelector<HTMLSelectElement>("[data-categoria]")?.focus();
+    });
+
+    lista.addEventListener("click", (e) => {
+      const boton = (e.target as HTMLElement).closest("[data-quitar]");
+      if (!boton) return;
+      const fila = boton.closest<HTMLElement>("[data-fila]")!;
+      const filas = [...lista.querySelectorAll<HTMLElement>("[data-fila]")];
+      if (filas.length === 1) {
+        // Siempre queda una fila: se vacía en lugar de borrarla
+        fila.querySelectorAll<HTMLInputElement | HTMLSelectElement>("input, select").forEach((c) => (c.value = ""));
+        filtrar(fila);
+        actualizarOtro(fila);
+        fila.querySelector<HTMLSelectElement>("[data-categoria]")?.focus();
+        return;
+      }
+      const anterior = filas[filas.indexOf(fila) - 1];
+      fila.remove();
+      numerar();
+      (anterior?.querySelector<HTMLElement>("[data-quitar]") ?? anadir).focus();
+    });
+  });
+</script>
+
+<style>
+  .ingredientes {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.75rem;
+  }
+</style>

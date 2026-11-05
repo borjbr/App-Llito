@@ -1,0 +1,201 @@
+---
+import App from "@/layouts/App.astro";
+import { CATEGORIAS, textoEdad } from "@/lib/alimentos";
+import { borrarReceta, buscarReceta, pasosDe, paraChat } from "@/lib/recetas";
+
+const hogar = Astro.locals.hogar!;
+const r = await buscarReceta(hogar.id, Astro.params.id!);
+if (!r) return Astro.redirect("/hijos/recetas", 303);
+
+let confirmarBorrado = false;
+if (Astro.request.method === "POST") {
+  const accion = String((await Astro.request.formData()).get("accion") ?? "");
+  if (accion === "borrar") confirmarBorrado = true;
+  if (accion === "borrar-confirmado") {
+    await borrarReceta(hogar.id, r.id);
+    return Astro.redirect("/hijos/recetas?ok=borrada", 303);
+  }
+}
+
+const ok = Astro.url.searchParams.get("ok");
+const MENSAJES: Record<string, string> = { creada: "Receta guardada en el recetario.", guardada: "Cambios guardados." };
+const pasos = pasosDe(r);
+const { avisos } = paraChat(r);
+const meta = [
+  textoEdad(r.edadMeses) && { icono: "👶", txt: textoEdad(r.edadMeses) },
+  r.minutos && { icono: "⏱️", txt: `${r.minutos} min` },
+  r.raciones && { icono: "🍽️", txt: r.raciones },
+].filter(Boolean) as { icono: string; txt: string }[];
+const pregunta = encodeURIComponent(`Sobre la receta «${r.titulo}»: `);
+---
+
+<App title={r.titulo}>
+  <header class="grid gap-3">
+    <a href="/hijos/recetas" class="btn btn-ghost justify-self-start -ml-3"><span aria-hidden="true">←</span> Recetario</a>
+    {r.origen === "asistente" && <p class="chip-llito justify-self-start"><span aria-hidden="true">✨</span> Receta de Llito</p>}
+    <h1 class="break-words">{r.titulo}</h1>
+    {r.descripcion && <p class="text-muted text-lg">{r.descripcion}</p>}
+    {
+      meta.length > 0 && (
+        <ul class="meta">
+          {meta.map((m) => (
+            <li><span aria-hidden="true">{m.icono}</span> {m.txt}</li>
+          ))}
+        </ul>
+      )
+    }
+  </header>
+
+  {ok && MENSAJES[ok] && <div class="alert alert-ok" role="status"><p>{MENSAJES[ok]}</p></div>}
+
+  {
+    confirmarBorrado && (
+      <form method="post" class="alert alert-error" role="alert" tabindex="-1" data-foco>
+        <p>¿Borrar «{r.titulo}» del recetario? No se puede deshacer.</p>
+        <div class="flex gap-2 flex-wrap">
+          <input type="hidden" name="accion" value="borrar-confirmado" />
+          <button class="btn btn-danger" type="submit">Sí, borrar</button>
+          <a href={`/hijos/recetas/${r.id}`} class="btn btn-secondary" style="color: var(--ink);">Cancelar</a>
+        </div>
+      </form>
+    )
+  }
+
+  <section class="card grid gap-3" aria-labelledby="sec-ingredientes">
+    <h2 id="sec-ingredientes">Ingredientes</h2>
+    <ul class="ingredientes">
+      {
+        r.ingredientes.map((i) => (
+          <li>
+            <span class="ing-emoji" aria-hidden="true">{CATEGORIAS[i.categoria].emoji}</span>
+            <span class="ing-nombre">{i.producto}</span>
+            {i.cantidad && <span class="ing-cantidad">{i.cantidad}</span>}
+          </li>
+        ))
+      }
+    </ul>
+  </section>
+
+  {
+    avisos.length > 0 && (
+      <aside class="aviso" aria-label="Avisos para bebés">
+        <p class="font-bold"><span aria-hidden="true">⚠️</span> Para bebés, ten en cuenta</p>
+        <ul>{avisos.map((a) => <li>{a}</li>)}</ul>
+      </aside>
+    )
+  }
+
+  <section class="card grid gap-3" aria-labelledby="sec-pasos">
+    <h2 id="sec-pasos">Preparación</h2>
+    <ol class="pasos" role="list">{pasos.map((p, n) => <li><span class="sr-only">Paso {n + 1}: </span>{p}</li>)}</ol>
+  </section>
+
+  {
+    r.notas && (
+      <section class="card grid gap-2" aria-labelledby="sec-notas">
+        <h2 id="sec-notas">Notas</h2>
+        <p class="whitespace-pre-line">{r.notas}</p>
+      </section>
+    )
+  }
+
+  <div class="grid gap-3 sm:grid-cols-2">
+    <a href={`/hijos/recetas/${r.id}/editar`} class="btn btn-primary">Editar receta</a>
+    <a href={`/asistente?q=${pregunta}`} class="btn btn-secondary"><span aria-hidden="true">✨</span> Preguntar a Llito</a>
+  </div>
+  {
+    !confirmarBorrado && (
+      <form method="post" class="grid">
+        <input type="hidden" name="accion" value="borrar" />
+        <button class="btn btn-danger btn-block" type="submit">Borrar receta</button>
+      </form>
+    )
+  }
+</App>
+
+<script>
+  document.querySelector<HTMLElement>("[data-foco]")?.focus();
+</script>
+
+<style>
+  .chip-llito {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.2rem 0.75rem;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-weight: 700;
+    font-size: 0.88rem;
+  }
+  .meta {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .meta li {
+    padding: 0.3rem 0.85rem;
+    border-radius: 999px;
+    background: var(--hijos-soft);
+    font-weight: 700;
+    font-size: 0.92rem;
+  }
+  .ingredientes {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+  }
+  .ingredientes li {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .ingredientes li:last-child { border-bottom: 0; }
+  .ing-emoji { font-size: 1.3rem; }
+  .ing-nombre { font-weight: 700; }
+  .ing-cantidad { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
+  .pasos {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    counter-reset: paso;
+    display: grid;
+    gap: 0.9rem;
+  }
+  .pasos li {
+    counter-increment: paso;
+    display: grid;
+    grid-template-columns: 2rem 1fr;
+    gap: 0.75rem;
+  }
+  .pasos li::before {
+    content: counter(paso);
+    display: grid;
+    place-items: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 999px;
+    background: var(--hijos);
+    color: var(--surface);
+    font-weight: 700;
+    font-family: var(--font-display);
+  }
+  .aviso {
+    display: grid;
+    gap: 0.4rem;
+    padding: 0.9rem 1rem;
+    border-radius: var(--radius);
+    background: var(--aviso-soft);
+    color: var(--aviso);
+    border: 2px solid var(--aviso);
+  }
+  .aviso ul { margin: 0; padding-left: 1.1rem; color: var(--ink); }
+</style>

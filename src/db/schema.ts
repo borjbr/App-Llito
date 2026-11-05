@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, index, primaryKey } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, index, primaryKey, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { relations, sql } from "drizzle-orm";
 
 const timestamps = {
@@ -193,6 +193,107 @@ export const conexionGoogle = sqliteTable("conexion_google", {
   ultimoError: text("ultimo_error"),
   ...timestamps,
 });
+
+/* ── Recetario ────────────────────────────────────────────────────────── */
+
+export const CATEGORIAS_ALIMENTO = ["verdura", "fruta", "cereal", "legumbre", "proteina", "lacteo", "grasa", "especia", "otro"] as const;
+export const ORIGENES_RECETA = ["familia", "asistente"] as const;
+
+/** Receta del hogar. Es la fuente de verdad: el asistente la muestra tal cual, sin reescribirla. */
+export const receta = sqliteTable(
+  "receta",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    hogarId: text("hogar_id")
+      .notNull()
+      .references(() => hogar.id, { onDelete: "cascade" }),
+    titulo: text("titulo").notNull(),
+    /** Título normalizado (sin tildes ni mayúsculas) para no duplicar recetas */
+    clave: text("clave").notNull(),
+    descripcion: text("descripcion"),
+    /** Edad mínima recomendada en meses; null = sin indicar */
+    edadMeses: integer("edad_meses"),
+    minutos: integer("minutos"),
+    raciones: text("raciones"),
+    /** Un paso por línea */
+    pasos: text("pasos").notNull().default(""),
+    notas: text("notas"),
+    origen: text("origen", { enum: ORIGENES_RECETA }).notNull().default("familia"),
+    creadoPor: text("creado_por").references(() => user.id, { onDelete: "set null" }),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex("receta_hogar_clave_idx").on(t.hogarId, t.clave)],
+);
+
+export const ingredienteReceta = sqliteTable(
+  "ingrediente_receta",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    recetaId: text("receta_id")
+      .notNull()
+      .references(() => receta.id, { onDelete: "cascade" }),
+    categoria: text("categoria", { enum: CATEGORIAS_ALIMENTO }).notNull().default("otro"),
+    producto: text("producto").notNull(),
+    cantidad: text("cantidad"),
+    orden: integer("orden").notNull().default(0),
+  },
+  (t) => [index("ingrediente_receta_idx").on(t.recetaId)],
+);
+
+/* ── Asistente ────────────────────────────────────────────────────────── */
+
+/** Datos que el asistente recuerda del hogar (preferencias, alimentos ya introducidos…). */
+export const memoria = sqliteTable(
+  "memoria",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    hogarId: text("hogar_id")
+      .notNull()
+      .references(() => hogar.id, { onDelete: "cascade" }),
+    texto: text("texto").notNull(),
+    creadoPor: text("creado_por").references(() => user.id, { onDelete: "set null" }),
+    ...timestamps,
+  },
+  (t) => [index("memoria_hogar_idx").on(t.hogarId)],
+);
+
+/** Historial del chat: cada persona tiene su conversación; recetas y memoria son del hogar. */
+export const mensajeChat = sqliteTable(
+  "mensaje_chat",
+  {
+    id: text("id").primaryKey(),
+    hogarId: text("hogar_id")
+      .notNull()
+      .references(() => hogar.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    rol: text("rol", { enum: ["user", "assistant"] }).notNull(),
+    /** Partes del mensaje (formato UIMessage del AI SDK) en JSON */
+    partes: text("partes").notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (t) => [index("mensaje_chat_user_idx").on(t.userId, t.createdAt), index("mensaje_chat_hogar_idx").on(t.hogarId, t.createdAt)],
+);
+
+export const recetaRelations = relations(receta, ({ many }) => ({
+  ingredientes: many(ingredienteReceta),
+}));
+
+export const ingredienteRecetaRelations = relations(ingredienteReceta, ({ one }) => ({
+  receta: one(receta, { fields: [ingredienteReceta.recetaId], references: [receta.id] }),
+}));
+
+export type Receta = typeof receta.$inferSelect;
+export type IngredienteReceta = typeof ingredienteReceta.$inferSelect;
+export type CategoriaAlimento = (typeof CATEGORIAS_ALIMENTO)[number];
+export type Memoria = typeof memoria.$inferSelect;
 
 export type Evento = typeof evento.$inferSelect;
 export type TipoEvento = (typeof TIPOS_EVENTO)[number];

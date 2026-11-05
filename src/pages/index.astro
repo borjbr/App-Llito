@@ -4,14 +4,23 @@ import ItemEvento from "@/components/ItemEvento.astro";
 import { hijosDe, listaNombres, miembrosDe } from "@/lib/familia";
 import { eventosEnRango } from "@/lib/eventos";
 import { fechaMadrid, nombreDia, sumarDias } from "@/lib/fechas";
+import { db } from "@/db/client";
+import { mensajeChat } from "@/db/schema";
+import { and, desc, eq } from "drizzle-orm";
 
 const user = Astro.locals.user!;
 const hogar = Astro.locals.hogar!;
 const hoyMadrid = fechaMadrid();
-const [hijos, miembros, semana] = await Promise.all([
+const [hijos, miembros, semana, ultimaPregunta] = await Promise.all([
   hijosDe(hogar.id),
   miembrosDe(hogar.id),
   eventosEnRango(hogar.id, hoyMadrid, sumarDias(hoyMadrid, 7)),
+  db
+    .select({ partes: mensajeChat.partes })
+    .from(mensajeChat)
+    .where(and(eq(mensajeChat.userId, user.id), eq(mensajeChat.rol, "user")))
+    .orderBy(desc(mensajeChat.createdAt))
+    .get(),
 ]);
 const proximos = semana.filter((e) => !(e.tipo === "tarea" && e.completado)).slice(0, 4);
 const mapaHijos = new Map(hijos.map((h) => [h.id, h.nombre]));
@@ -24,6 +33,22 @@ const hora = Number(
 );
 const saludo = hora < 6 ? "Buenas noches" : hora < 14 ? "Buenos días" : hora < 21 ? "Buenas tardes" : "Buenas noches";
 const fecha = new Intl.DateTimeFormat("es-ES", { weekday: "long", day: "numeric", month: "long", timeZone: "Europe/Madrid" }).format(new Date());
+
+// Asistente: sugerencias y última pregunta para retomar la conversación
+const bebe = hijos[0]?.nombre;
+const sugerencias = [
+  { txt: "Puré de calabaza y zanahoria", q: "Dame una receta de puré de calabaza y zanahoria" },
+  { txt: "Cena rápida para hoy", q: "Ideas de cena rápida y sana para hoy" },
+  { txt: bebe ? `¿Qué puede comer ${bebe}?` : "Primeros alimentos", q: bebe ? `¿Qué alimentos puede empezar a comer ${bebe}?` : "¿Con qué alimentos se empieza la alimentación complementaria?" },
+];
+let retomar = "";
+try {
+  const partes = ultimaPregunta ? (JSON.parse(ultimaPregunta.partes) as { type: string; text?: string }[]) : [];
+  retomar = partes.map((p) => p.text ?? "").join(" ").trim();
+} catch {
+  /* mensaje antiguo con otro formato */
+}
+if (retomar.length > 60) retomar = `${retomar.slice(0, 57)}…`;
 
 const tituloHijos = hijos.length === 1 ? nombres[0] : hijos.length > 1 ? "Hijos" : "Hijo/a";
 const textoHijos =
@@ -50,6 +75,43 @@ const textoHijos =
       <h1>{saludo}, {user.name}</h1>
     </div>
   </header>
+
+  <section class="llito" aria-labelledby="sec-llito">
+    <div class="llito-cabecera">
+      <span class="llito-icono" aria-hidden="true">✨</span>
+      <div class="min-w-0">
+        <h2 id="sec-llito">Pregúntale a Llito</h2>
+        <p class="llito-sub">Recetas, ideas y dudas del día a día. Lo que guarda, lo recuerda.</p>
+      </div>
+    </div>
+    <form action="/asistente" method="get" class="llito-form">
+      <label for="llito-q" class="sr-only">Pregunta para Llito</label>
+      <input
+        id="llito-q"
+        name="q"
+        class="llito-input"
+        placeholder={bebe ? `¿Qué le preparo hoy a ${bebe}?` : "¿En qué te ayudo hoy?"}
+        maxlength="2000"
+        required
+        autocomplete="off"
+        enterkeyhint="send"
+      />
+      <button class="llito-enviar" type="submit" aria-label="Preguntar a Llito">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
+      </button>
+    </form>
+    <ul class="llito-chips" aria-label="Sugerencias">
+      {sugerencias.map((s) => <li><a href={`/asistente?q=${encodeURIComponent(s.q)}`}>{s.txt}</a></li>)}
+    </ul>
+    {
+      retomar && (
+        <a href="/asistente" class="llito-retomar">
+          <span class="min-w-0 truncate">Seguir: «{retomar}»</span>
+          <span aria-hidden="true">→</span>
+        </a>
+      )
+    }
+  </section>
 
   <a href="/mi-perfil/familia" class="familia">
     <span class="flex -space-x-2" aria-hidden="true">
@@ -112,6 +174,86 @@ const textoHijos =
 </App>
 
 <style>
+  .llito {
+    display: grid;
+    gap: 0.9rem;
+    padding: 1.25rem;
+    border-radius: var(--radius-lg);
+    background:
+      radial-gradient(120% 140% at 100% 0%, var(--hijos-soft) 0%, transparent 55%),
+      linear-gradient(135deg, var(--accent-soft), var(--surface));
+    border: 1px solid var(--line);
+  }
+  .llito-cabecera { display: flex; align-items: center; gap: 0.85rem; }
+  .llito-icono {
+    display: grid;
+    place-items: center;
+    width: 3rem;
+    height: 3rem;
+    flex-shrink: 0;
+    border-radius: 16px;
+    background: var(--surface);
+    font-size: 1.5rem;
+    box-shadow: 0 2px 10px rgb(0 0 0 / 0.06);
+  }
+  .llito-sub { color: var(--muted); font-size: 0.92rem; }
+  .llito-form {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.3rem 0.3rem 0.3rem 1rem;
+    border-radius: 999px;
+    background: var(--surface);
+    border: 2px solid var(--line);
+  }
+  .llito-form:focus-within { border-color: var(--accent); outline: 3px solid var(--focus); outline-offset: 2px; }
+  .llito-input {
+    min-width: 0;
+    min-height: 2.75rem;
+    border: 0;
+    background: transparent;
+    color: var(--ink);
+    font: inherit;
+    outline: none;
+  }
+  .llito-enviar {
+    display: grid;
+    place-items: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: 999px;
+    border: 0;
+    background: var(--accent);
+    color: var(--accent-ink);
+    cursor: pointer;
+  }
+  .llito-enviar svg { width: 1.3rem; height: 1.3rem; }
+  .llito-chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  .llito-chips a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.5rem;
+    padding: 0.3rem 0.85rem;
+    border-radius: 999px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    color: var(--ink);
+    text-decoration: none;
+    font-size: 0.9rem;
+    font-weight: 700;
+  }
+  .llito-chips a:hover { border-color: var(--accent); color: var(--accent); }
+  .llito-retomar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 2.5rem;
+    font-weight: 700;
+    font-size: 0.92rem;
+    text-decoration: none;
+  }
   .familia {
     display: flex;
     align-items: center;

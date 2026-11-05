@@ -1,0 +1,91 @@
+---
+/**
+ * Una fila de ingrediente del formulario de receta.
+ * n = -1 genera la plantilla que clona el JavaScript (los ids llevan "__N__").
+ */
+import { CATEGORIAS, ORDEN_CATEGORIAS } from "@/lib/alimentos";
+import { LIMITES, OTRO, type FilaIngrediente } from "@/lib/recetas";
+
+interface Props {
+  fila: FilaIngrediente;
+  n: number;
+}
+const { fila: f, n } = Astro.props;
+const sufijo = n < 0 ? "__N__" : String(n);
+const id = (campo: string) => `ing_${campo}_${sufijo}`;
+---
+
+<li class="fila" data-fila>
+  <div class="fila-cabecera">
+    <span class="fila-numero" data-numero>Ingrediente {n + 1}</span>
+    <button type="button" class="btn btn-ghost fila-quitar" data-quitar hidden>Quitar</button>
+  </div>
+  <div class="fila-campos">
+    <div class="field">
+      <label class="label" for={id("categoria")}>Tipo</label>
+      <select class="input" id={id("categoria")} name="ing_categoria" data-categoria>
+        <option value="">Todos</option>
+        {ORDEN_CATEGORIAS.map((c) => <option value={c} selected={f.categoria === c}>{CATEGORIAS[c].emoji} {CATEGORIAS[c].nombre}</option>)}
+      </select>
+    </div>
+    <div class="field">
+      <label class="label" for={id("producto")}>Ingrediente</label>
+      <select class="input" id={id("producto")} name="ing_producto" data-producto>
+        <option value="">Elige…</option>
+        {
+          ORDEN_CATEGORIAS.map((c) => (
+            <optgroup label={`${CATEGORIAS[c].emoji} ${CATEGORIAS[c].nombre}`}>
+              {CATEGORIAS[c].productos.map((p) => <option value={p.nombre} selected={f.producto === p.nombre}>{p.nombre}</option>)}
+            </optgroup>
+          ))
+        }
+        <option value={OTRO} selected={f.producto === OTRO}>Otro (escribir)</option>
+      </select>
+    </div>
+    <div class="field" data-campo-otro hidden={f.producto !== OTRO}>
+      <label class="label" for={id("otro")}>¿Qué ingrediente?</label>
+      <input class="input" id={id("otro")} name="ing_otro" value={f.otro} maxlength={LIMITES.producto} />
+    </div>
+    <div class="field">
+      <label class="label" for={id("cantidad")}>Cantidad</label>
+      <input class="input" id={id("cantidad")} name="ing_cantidad" value={f.cantidad} maxlength={LIMITES.cantidad} placeholder="150 g" />
+    </div>
+  </div>
+</li>
+
+<style>
+  .fila {
+    display: grid;
+    gap: 0.5rem;
+    padding: 0.85rem 1rem 1rem;
+    border-radius: var(--radius);
+    background: var(--surface-2);
+  }
+  .fila-cabecera {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    min-height: 2.25rem;
+  }
+  .fila-numero {
+    font-weight: 700;
+    font-size: 0.88rem;
+    color: var(--muted);
+  }
+  .fila-quitar {
+    min-height: 2.25rem;
+    padding-block: 0.2rem;
+    color: var(--danger);
+  }
+  .fila-quitar:hover { background: var(--danger-soft); }
+  .fila-campos {
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: 1fr;
+  }
+  @media (min-width: 560px) {
+    .fila-campos { grid-template-columns: 1fr 1fr; }
+  }
+  .fila .input { background: var(--surface); }
+</style>

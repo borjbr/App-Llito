@@ -1,0 +1,33 @@
+---
+import App from "@/layouts/App.astro";
+import FormReceta from "@/components/FormReceta.astro";
+import { buscarReceta, guardarReceta, leerFormReceta, valoresDe } from "@/lib/recetas";
+import type { Errores } from "@/lib/validacion";
+
+const usuario = Astro.locals.user!;
+const hogar = Astro.locals.hogar!;
+const actual = await buscarReceta(hogar.id, Astro.params.id!);
+if (!actual) return Astro.redirect("/hijos/recetas", 303);
+
+let valores = valoresDe(actual);
+let errores: Errores = {};
+
+if (Astro.request.method === "POST") {
+  const leido = leerFormReceta(await Astro.request.formData());
+  valores = leido.valores;
+  errores = leido.errores;
+  if (leido.datos) {
+    const res = await guardarReceta(hogar.id, usuario.id, leido.datos, { id: actual.id });
+    if (res.ok) return Astro.redirect(`/hijos/recetas/${actual.id}?ok=guardada`, 303);
+    errores = { titulo: res.error };
+  }
+}
+---
+
+<App title={`Editar ${actual.titulo}`}>
+  <header class="grid gap-2">
+    <a href={`/hijos/recetas/${actual.id}`} class="btn btn-ghost justify-self-start -ml-3"><span aria-hidden="true">←</span> Volver a la receta</a>
+    <h1 class="break-words">Editar receta</h1>
+  </header>
+  <FormReceta valores={valores} errores={errores} textoBoton="Guardar cambios" />
+</App>
