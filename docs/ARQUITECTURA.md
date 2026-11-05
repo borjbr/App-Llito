@@ -13,7 +13,7 @@ App web familiar para organizar el hogar y el cuidado de los hijos. Pensada prim
 | Autenticación | Better Auth (email y contraseña) | Sesiones en nuestra propia BD, sin servicios externos |
 | Validación | Zod | Mensajes de error en español y de servidor |
 | Interactividad | Scripts pequeños de Astro; Preact en islands cuando haga falta (gráficas, temporizadores) | Mínimo JavaScript en el móvil |
-| Asistente | Vercel AI SDK + OpenAI (`gpt-5.4-mini` por defecto) | Único servicio de pago; con límite diario por hogar |
+| Asistente | Vercel AI SDK + OpenAI (`gpt-4o-mini` por defecto) | Único servicio de pago; con límite diario por hogar |
 | Despliegue | Vercel (previews por PR) | Gratis para uso personal |
 
 ## Principios
