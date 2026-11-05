@@ -1,0 +1,273 @@
+---
+import App from "@/layouts/App.astro";
+import ItemEvento from "@/components/ItemEvento.astro";
+import { hijosDe, miembrosDe } from "@/lib/familia";
+import { eventosEnRango, ORDEN_TIPOS, tareasSinFecha, TIPOS, type Ocurrencia } from "@/lib/eventos";
+import { DIAS_CORTOS, diasDelMes, diaSemana, esFechaValida, fechaLarga, fechaMadrid, nombreDia, nombreMes, sumarDias } from "@/lib/fechas";
+import { conexionDe, sincronizarDesdeGoogle } from "@/lib/google";
+import type { TipoEvento } from "@/db/schema";
+
+const hogar = Astro.locals.hogar!;
+const hoy = fechaMadrid();
+const q = Astro.url.searchParams;
+
+// Mes visible y día seleccionado
+const diaParam = q.get("dia");
+const dia = diaParam && esFechaValida(diaParam) ? diaParam : hoy;
+const mesParam = q.get("mes");
+const [anio, mes] = (mesParam && /^\d{4}-\d{2}$/.test(mesParam) ? mesParam : dia.slice(0, 7)).split("-").map(Number);
+const mesTxt = `${anio}-${String(mes).padStart(2, "0")}`;
+const primero = `${mesTxt}-01`;
+const ultimo = `${mesTxt}-${String(diasDelMes(anio, mes)).padStart(2, "0")}`;
+const mesAnterior = mes === 1 ? `${anio - 1}-12` : `${anio}-${String(mes - 1).padStart(2, "0")}`;
+const mesSiguiente = mes === 12 ? `${anio + 1}-01` : `${anio}-${String(mes + 1).padStart(2, "0")}`;
+
+const tipoParam = q.get("tipo");
+const filtro = tipoParam && tipoParam in TIPOS ? (tipoParam as TipoEvento) : null;
+
+// Trae cambios de Google (como mucho una vez por minuto, sin bloquear más de 4 s)
+const conexion = await conexionDe(hogar.id);
+if (conexion) {
+  await Promise.race([sincronizarDesdeGoogle(hogar.id), new Promise((r) => setTimeout(r, 4000))]);
+}
+
+const finProximos = sumarDias(dia, 14);
+const desde = primero < dia ? primero : dia;
+const hasta = ultimo > finProximos ? ultimo : finProximos;
+const [todos, hijos, miembros, sinFecha] = await Promise.all([
+  eventosEnRango(hogar.id, desde, hasta),
+  hijosDe(hogar.id),
+  miembrosDe(hogar.id),
+  tareasSinFecha(hogar.id),
+]);
+const filtrar = <T extends { tipo: TipoEvento }>(lista: T[]) => (filtro ? lista.filter((e) => e.tipo === filtro) : lista);
+const ocurrencias = filtrar(todos);
+
+const porDia = new Map<string, Ocurrencia[]>();
+for (const e of ocurrencias) porDia.set(e.dia, [...(porDia.get(e.dia) ?? []), e]);
+
+// Celdas del mes empezando en lunes
+const huecos = diaSemana(primero);
+const celdas: (string | null)[] = [...Array(huecos).fill(null)];
+for (let d = primero; d <= ultimo; d = sumarDias(d, 1)) celdas.push(d);
+while (celdas.length % 7 !== 0) celdas.push(null);
+const semanas = Array.from({ length: celdas.length / 7 }, (_, i) => celdas.slice(i * 7, i * 7 + 7));
+
+const delDia = porDia.get(dia) ?? [];
+const proximos = [...porDia.entries()].filter(([d]) => d > dia && d <= finProximos);
+const pendientesSinFecha = filtro && filtro !== "tarea" ? [] : sinFecha;
+
+const mapaHijos = new Map(hijos.map((h) => [h.id, h.nombre]));
+const mapaMiembros = new Map(miembros.map((m) => [m.id, { nombre: m.nombre, avatar: m.avatar }]));
+const volver = Astro.url.pathname + Astro.url.search.replace(/[?&]ok=[^&]*/, "");
+const AVISOS: Record<string, string> = { creado: "Guardado en la agenda.", guardado: "Cambios guardados.", borrado: "Borrado de la agenda." };
+const aviso = AVISOS[q.get("ok") ?? ""];
+
+const enlace = (params: Record<string, string | null>) => {
+  const p = new URLSearchParams();
+  const todos = { mes: mesTxt, dia, tipo: filtro, ...params };
+  for (const [k, v] of Object.entries(todos)) if (v) p.set(k, v);
+  return `/agenda?${p}`;
+};
+---
+
+<App title="Agenda">
+  <header class="flex items-center justify-between gap-3 flex-wrap">
+    <h1>Agenda</h1>
+    <a href={`/agenda/nuevo?fecha=${dia}`} class="btn btn-primary"><span aria-hidden="true">＋</span> Añadir</a>
+  </header>
+
+  {aviso && <div class="alert alert-ok" role="status"><p>{aviso}{conexion && q.get("ok") !== "borrado" ? " También está en Google Calendar." : ""}</p></div>}
+
+  <a href="/agenda/google" class="google" data-estado={conexion ? (conexion.ultimoError ? "error" : "ok") : "no"}>
+    <span aria-hidden="true" class="text-xl">{conexion ? (conexion.ultimoError ? "⚠️" : "🔄") : "🔗"}</span>
+    <span class="min-w-0">
+      <span class="block font-bold">
+        {conexion ? (conexion.ultimoError ? "Problema con Google Calendar" : `Sincronizada con Google · ${conexion.calendarNombre}`) : "Conectar con Google Calendar"}
+      </span>
+      <span class="block hint">
+        {conexion ? (conexion.ultimoError ? "Toca para ver qué pasa." : "Los avisos llegan como notificación a cada móvil.") : "Para recibir avisos en el móvil y verlo todo en Google."}
+      </span>
+    </span>
+  </a>
+
+  <!-- Filtro por tipo -->
+  <nav aria-label="Filtrar por tipo" class="filtros">
+    <a href={enlace({ tipo: null })} aria-current={!filtro ? "true" : undefined}>Todo</a>
+    {ORDEN_TIPOS.map((t) => (
+      <a href={enlace({ tipo: t })} aria-current={filtro === t ? "true" : undefined} style={`--c: ${TIPOS[t].color}`}>
+        <span aria-hidden="true">{TIPOS[t].emoji}</span> {TIPOS[t].nombre}
+      </a>
+    ))}
+  </nav>
+
+  <!-- Mes -->
+  <section class="card grid gap-3" aria-labelledby="titulo-mes" style="padding: 1rem;">
+    <div class="flex items-center justify-between gap-2">
+      <a href={enlace({ mes: mesAnterior, dia: `${mesAnterior}-01` })} class="btn btn-ghost" aria-label={`Mes anterior: ${nombreMes(Number(mesAnterior.slice(0, 4)), Number(mesAnterior.slice(5)))}`}>←</a>
+      <h2 id="titulo-mes" class="first-letter:uppercase text-center">{nombreMes(anio, mes)}</h2>
+      <a href={enlace({ mes: mesSiguiente, dia: `${mesSiguiente}-01` })} class="btn btn-ghost" aria-label={`Mes siguiente: ${nombreMes(Number(mesSiguiente.slice(0, 4)), Number(mesSiguiente.slice(5)))}`}>→</a>
+    </div>
+    <table class="mes">
+      <caption class="sr-only">Calendario de {nombreMes(anio, mes)}. Elige un día para ver lo que hay.</caption>
+      <thead>
+        <tr>{DIAS_CORTOS.map((d) => <th scope="col" abbr={d}>{d}</th>)}</tr>
+      </thead>
+      <tbody>
+        {semanas.map((semana) => (
+          <tr>
+            {semana.map((d) =>
+              d ? (
+                <td>
+                  <a
+                    href={enlace({ dia: d })}
+                    class="dia"
+                    aria-current={d === dia ? "true" : undefined}
+                    data-hoy={d === hoy ? "si" : undefined}
+                    aria-label={`${fechaLarga(d)}${d === hoy ? " (hoy)" : ""}: ${(porDia.get(d) ?? []).length || "nada"}${(porDia.get(d) ?? []).length === 1 ? " cosa" : (porDia.get(d) ?? []).length > 1 ? " cosas" : ""}`}
+                  >
+                    <span class="dia-num">{Number(d.slice(8))}</span>
+                    <span class="puntos" aria-hidden="true">
+                      {(porDia.get(d) ?? []).slice(0, 3).map((e) => <span style={`background: ${TIPOS[e.tipo].color}`}></span>)}
+                    </span>
+                  </a>
+                </td>
+              ) : (
+                <td aria-hidden="true"></td>
+              ),
+            )}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+    {dia !== hoy && <a href={enlace({ mes: hoy.slice(0, 7), dia: hoy })} class="btn btn-ghost justify-self-center">Volver a hoy</a>}
+  </section>
+
+  <!-- Día elegido -->
+  <section class="grid gap-3" aria-labelledby="titulo-dia">
+    <h2 id="titulo-dia" class="first-letter:uppercase">{nombreDia(dia, hoy)}{dia === hoy || dia === sumarDias(hoy, 1) ? `, ${fechaLarga(dia)}` : ""}</h2>
+    {
+      delDia.length > 0 ? (
+        <ul class="grid gap-2 list-none p-0 m-0">
+          {delDia.map((e) => <ItemEvento evento={e} hijos={mapaHijos} miembros={mapaMiembros} volver={volver} />)}
+        </ul>
+      ) : (
+        <div class="vacio">
+          <p>Nada apuntado{filtro ? ` de tipo «${TIPOS[filtro].nombre}»` : ""} para este día.</p>
+          <a href={`/agenda/nuevo?fecha=${dia}${filtro ? `&tipo=${filtro}` : ""}`} class="btn btn-secondary">Añadir algo este día</a>
+        </div>
+      )
+    }
+  </section>
+
+  <!-- Próximos días -->
+  {
+    proximos.length > 0 && (
+      <section class="grid gap-4" aria-labelledby="titulo-proximos">
+        <h2 id="titulo-proximos">Próximos 14 días</h2>
+        {proximos.map(([d, lista]) => (
+          <div class="grid gap-2">
+            <h3 class="text-base font-bold text-muted first-letter:uppercase" style="font-family: var(--font-body); font-size: 1rem;">{nombreDia(d, hoy)}</h3>
+            <ul class="grid gap-2 list-none p-0 m-0">
+              {lista.map((e) => <ItemEvento evento={e} hijos={mapaHijos} miembros={mapaMiembros} volver={volver} />)}
+            </ul>
+          </div>
+        ))}
+      </section>
+    )
+  }
+
+  <!-- Tareas sin fecha -->
+  {
+    pendientesSinFecha.length > 0 && (
+      <section class="grid gap-3" aria-labelledby="titulo-tareas">
+        <h2 id="titulo-tareas">Tareas sin fecha</h2>
+        <ul class="grid gap-2 list-none p-0 m-0">
+          {pendientesSinFecha.map((e) => <ItemEvento evento={e} hijos={mapaHijos} miembros={mapaMiembros} volver={volver} />)}
+        </ul>
+      </section>
+    )
+  }
+</App>
+
+<style>
+  .google {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    padding: 0.75rem 1rem;
+    border-radius: var(--radius);
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--ink);
+    text-decoration: none;
+  }
+  .google[data-estado="no"] { border: 2px dashed var(--accent); background: var(--accent-soft); }
+  .google[data-estado="error"] { border: 2px solid var(--danger); background: var(--danger-soft); }
+  .google:hover { border-color: var(--accent); }
+
+  .filtros {
+    display: flex;
+    gap: 0.5rem;
+    overflow-x: auto;
+    padding-bottom: 0.25rem;
+    margin-inline: -4px;
+    padding-inline: 4px;
+    scrollbar-width: thin;
+  }
+  .filtros a {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    min-height: 40px;
+    padding: 0.3rem 0.85rem;
+    border-radius: 999px;
+    border: 2px solid var(--line);
+    background: var(--surface);
+    color: var(--ink);
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 0.9rem;
+    white-space: nowrap;
+  }
+  .filtros a[aria-current="true"] { border-color: var(--c, var(--accent)); background: var(--surface-2); }
+
+  .mes { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  .mes th { font-size: 0.8rem; color: var(--muted); font-weight: 700; padding-bottom: 0.3rem; }
+  .mes td { padding: 2px; }
+  .dia {
+    display: grid;
+    justify-items: center;
+    align-content: center;
+    gap: 3px;
+    min-height: 3rem;
+    border-radius: 12px;
+    color: var(--ink);
+    text-decoration: none;
+    font-variant-numeric: tabular-nums;
+    border: 2px solid transparent;
+  }
+  .dia:hover { background: var(--surface-2); }
+  .dia[data-hoy] .dia-num {
+    background: var(--accent);
+    color: var(--accent-ink);
+    border-radius: 999px;
+    min-width: 1.9rem;
+    text-align: center;
+  }
+  .dia[aria-current="true"] { border-color: var(--accent); background: var(--accent-soft); }
+  .dia-num { font-weight: 700; line-height: 1.9rem; }
+  .puntos { display: flex; gap: 3px; min-height: 6px; }
+  .puntos span { width: 6px; height: 6px; border-radius: 999px; }
+
+  .vacio {
+    display: grid;
+    gap: 0.75rem;
+    justify-items: start;
+    padding: 1rem;
+    border: 2px dashed var(--line);
+    border-radius: var(--radius);
+    color: var(--muted);
+  }
+</style>

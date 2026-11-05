@@ -41,12 +41,30 @@ docs/                este documento
 ## Modelo de datos actual
 
 - `user`: nombre, apellidos, email, avatar (emoji), edad. Tablas `session`, `account`, `verification` de Better Auth.
-- `hijo`: nombre y orden, ligado al usuario.
+- `hogar`: nombre y código de invitación (8 caracteres sin letras ambiguas).
+- `miembro_hogar`: une cada persona con su hogar (una persona, un hogar) y su rol (`admin` o `miembro`).
+- `hijo`: pertenece al hogar, no a la persona, para que la pareja comparta los mismos datos.
+
+### Hogar compartido
+
+- Al registrarse se elige **crear un hogar nuevo** o **unirse con un código**. El enlace `/registro?codigo=XXXX` preselecciona la opción y muestra a qué hogar se une.
+- En **Mi perfil → Mi familia** se ven los miembros, se copia el enlace o el código, se cambia el nombre del hogar y quien lo administra puede crear un código nuevo.
+- Unirse a otro hogar: si la persona era la única de su hogar y tenía hijos, se pide confirmación explícita porque ese hogar se borra.
+- Todo dato nuevo (tomas, salud, tareas, citas) colgará de `hogar_id`.
+
+### Agenda y Google Calendar
+
+- Tabla `evento` (del hogar): tipo (cita médica, cumpleaños, tarea, plan, vacuna, recordatorio), fecha y horas en hora de Madrid, todo el día, repetición (semanal, mensual, anual), lugar, notas, hijo, responsable, avisos (minutos antes) y estado de tarea.
+- Las repeticiones se expanden al consultar un rango (`eventosEnRango`); el 29 de febrero y los días 31 caen en el último día disponible.
+- Tabla `conexion_google` (una por hogar): cuenta, calendario creado por la app, *refresh token* cifrado con AES-GCM y `syncToken`.
+- **App → Google**: al crear, editar, completar o borrar se llama a la API al momento. Si falla, el evento queda pendiente y se reintenta en la siguiente sincronización.
+- **Google → App**: sincronización incremental con `syncToken` al abrir la agenda (como mucho una vez por minuto) o con «Sincronizar ahora». Los eventos llevan `llitoId` y `llitoTipo` en `extendedProperties` para reconocerlos.
+- Los avisos son los recordatorios de Google Calendar: llegan como notificación nativa a cada móvil sin necesidad de un servidor de notificaciones propio.
+- Guía de configuración: [GOOGLE-CALENDAR.md](GOOGLE-CALENDAR.md).
 
 ## Próximos pasos
 
-1. **Hogar compartido**: que la pareja vea a los mismos hijos y los mismos datos (tabla `hogar` + invitación por código o email).
-2. Hijos: tomas y comidas.
-3. Hijos: salud y crecimiento (con gráfica).
-4. Hogar: tareas, lista de la compra y agenda.
-5. Resumen del día en Inicio y PWA instalable.
+1. Hijos: tomas y comidas.
+2. Hijos: salud y crecimiento (con gráfica).
+3. Hogar: lista de la compra.
+4. PWA instalable y resumen del día más completo en Inicio.

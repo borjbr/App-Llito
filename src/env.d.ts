@@ -8,5 +8,7 @@ declare namespace App {
       edad?: number | null;
     } | null;
     session: import("better-auth").Session | null;
+    /** Hogar del usuario conectado (siempre presente en rutas privadas) */
+    hogar: import("@/lib/familia").HogarConRol | null;
   }
 }

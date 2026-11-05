@@ -34,4 +34,9 @@ npm run dev                   # http://localhost:4321
    - `TURSO_AUTH_TOKEN`
    - `BETTER_AUTH_SECRET` (una clave larga y aleatoria)
    - `BETTER_AUTH_URL` (la URL de producción, por ejemplo `https://app-llito.vercel.app`)
+   - `GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET` (opcionales, para Google Calendar)
 4. Despliega. Cada pull request genera una preview automática.
+
+## Google Calendar
+
+La agenda se sincroniza con un calendario de Google compartido por la familia. Cómo crear el proyecto gratuito de Google Cloud y obtener las credenciales: [docs/GOOGLE-CALENDAR.md](docs/GOOGLE-CALENDAR.md).

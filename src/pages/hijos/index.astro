@@ -2,8 +2,7 @@
 import App from "@/layouts/App.astro";
 import { hijosDe } from "@/lib/familia";
 
-const user = Astro.locals.user!;
-const hijos = await hijosDe(user.id);
+const hijos = await hijosDe(Astro.locals.hogar!.id);
 ---
 
 <App title="Hijos">

@@ -1,0 +1,96 @@
+---
+import type { Evento } from "@/db/schema";
+import { edadEn, textoHora, TIPOS } from "@/lib/eventos";
+
+interface Props {
+  evento: Evento & { dia?: string };
+  hijos: Map<string, string>;
+  miembros: Map<string, { nombre: string; avatar: string }>;
+  volver: string;
+  mostrarDia?: string;
+}
+const { evento: e, hijos, miembros, volver, mostrarDia } = Astro.props;
+const t = TIPOS[e.tipo];
+const edad = e.dia ? edadEn(e, e.dia) : null;
+const para = e.hijoId ? hijos.get(e.hijoId) : undefined;
+const encargado = e.asignadoA ? miembros.get(e.asignadoA) : undefined;
+const hecha = e.tipo === "tarea" && e.completado;
+const titulo = e.tipo === "cumpleanos" ? `Cumpleaños de ${e.titulo}${edad ? ` (${edad})` : ""}` : e.titulo;
+const detalles = [para && `Para ${para}`, encargado && `${encargado.avatar} ${encargado.nombre}`, e.ubicacion].filter(Boolean);
+---
+
+<li class="item" style={`--c: ${t.color}`} data-hecha={hecha ? "si" : undefined}>
+  {
+    e.tipo === "tarea" ? (
+      <form method="post" action={`/agenda/${e.id}`} class="item-check">
+        <input type="hidden" name="accion" value="completar" />
+        <input type="hidden" name="volver" value={volver} />
+        <button type="submit" aria-pressed={hecha ? "true" : "false"} aria-label={hecha ? `Marcar «${e.titulo}» como pendiente` : `Marcar «${e.titulo}» como hecha`}>
+          <span aria-hidden="true">{hecha ? "✓" : ""}</span>
+        </button>
+      </form>
+    ) : (
+      <span class="item-emoji" aria-hidden="true">{t.emoji}</span>
+    )
+  }
+  <a href={`/agenda/${e.id}`} class="item-enlace">
+    <span class="item-hora">
+      {mostrarDia && <span class="block">{mostrarDia}</span>}
+      {e.fecha ? textoHora(e) : "Sin fecha"}
+    </span>
+    <span class="item-titulo">{titulo}</span>
+    {detalles.length > 0 && <span class="item-detalles">{detalles.join(" · ")}</span>}
+    <span class="sr-only">. {t.nombre}{hecha ? ", hecha" : ""}. Abrir para editar.</span>
+  </a>
+</li>
+
+<style>
+  .item {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    gap: 0.85rem;
+    padding: 0.7rem 0.85rem;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-left: 5px solid var(--c);
+    border-radius: var(--radius);
+  }
+  .item-emoji {
+    display: grid;
+    place-items: center;
+    width: 2.6rem;
+    height: 2.6rem;
+    font-size: 1.4rem;
+    border-radius: 12px;
+    background: var(--surface-2);
+  }
+  .item-check button {
+    display: grid;
+    place-items: center;
+    width: 2.6rem;
+    height: 2.6rem;
+    border-radius: 12px;
+    border: 2.5px solid var(--c);
+    background: transparent;
+    color: var(--surface);
+    font-size: 1.3rem;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .item-check button[aria-pressed="true"] { background: var(--c); }
+  .item-enlace {
+    display: grid;
+    gap: 0.1rem;
+    min-width: 0;
+    min-height: var(--tap);
+    align-content: center;
+    color: var(--ink);
+    text-decoration: none;
+  }
+  .item-hora { font-size: 0.85rem; font-weight: 700; color: var(--c); font-variant-numeric: tabular-nums; }
+  .item-titulo { font-weight: 700; overflow-wrap: anywhere; }
+  .item-detalles { font-size: 0.88rem; color: var(--muted); overflow-wrap: anywhere; }
+  .item[data-hecha] .item-titulo { text-decoration: line-through; color: var(--muted); }
+  .item:hover { border-color: var(--c); }
+</style>

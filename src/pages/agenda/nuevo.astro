@@ -1,0 +1,54 @@
+---
+import App from "@/layouts/App.astro";
+import FormEvento from "@/components/FormEvento.astro";
+import { db } from "@/db/client";
+import { evento, TIPOS_EVENTO, type TipoEvento } from "@/db/schema";
+import { hijosDe, miembrosDe } from "@/lib/familia";
+import { aFila } from "@/lib/eventos";
+import { esFechaValida, fechaMadrid } from "@/lib/fechas";
+import { leerFormEvento, valoresIniciales } from "@/lib/formEvento";
+import { conexionDe, subirEvento } from "@/lib/google";
+import type { Errores } from "@/lib/validacion";
+
+const usuario = Astro.locals.user!;
+const hogar = Astro.locals.hogar!;
+const [hijos, miembros, conexion] = await Promise.all([hijosDe(hogar.id), miembrosDe(hogar.id), conexionDe(hogar.id)]);
+
+const fechaParam = Astro.url.searchParams.get("fecha") ?? "";
+const tipoParam = Astro.url.searchParams.get("tipo") ?? "";
+const tipo: TipoEvento = (TIPOS_EVENTO as readonly string[]).includes(tipoParam) ? (tipoParam as TipoEvento) : "cita_medica";
+let valores = valoresIniciales(tipo, esFechaValida(fechaParam) ? fechaParam : fechaMadrid());
+let errores: Errores = {};
+
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  const leido = leerFormEvento(form, { hijos: hijos.map((h) => h.id), miembros: miembros.map((m) => m.id) });
+  valores = leido.valores;
+  errores = leido.errores;
+  if (leido.datos) {
+    const [creado] = await db
+      .insert(evento)
+      .values({ ...aFila(leido.datos), hogarId: hogar.id, creadoPor: usuario.id })
+      .returning();
+    await subirEvento(hogar.id, creado);
+    const destino = creado.fecha ? `/agenda?dia=${creado.fecha}&ok=creado` : "/agenda?ok=creado";
+    return Astro.redirect(destino, 303);
+  }
+}
+---
+
+<App title="Añadir a la agenda">
+  <header class="grid gap-2">
+    <a href={`/agenda?dia=${valores.fecha || fechaMadrid()}`} class="btn btn-ghost justify-self-start -ml-3"><span aria-hidden="true">←</span> Agenda</a>
+    <h1>Añadir a la agenda</h1>
+  </header>
+  <FormEvento
+    valores={valores}
+    errores={errores}
+    hijos={hijos}
+    miembros={miembros}
+    nuevo={true}
+    googleConectado={Boolean(conexion)}
+    textoBoton="Guardar"
+  />
+</App>
