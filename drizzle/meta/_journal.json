@@ -29,6 +29,20 @@
       "when": 1793898936014,
       "tag": "0003_recetario_asistente",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1794250514644,
+      "tag": "0004_hogar_compra_limpieza_pelis",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1794250515292,
+      "tag": "0005_citas_carmen_y_plan_prueba",
+      "breakpoints": true
     }
   ]
 }

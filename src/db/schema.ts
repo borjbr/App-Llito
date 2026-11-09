@@ -299,3 +299,82 @@ export type Evento = typeof evento.$inferSelect;
 export type TipoEvento = (typeof TIPOS_EVENTO)[number];
 export type Repeticion = (typeof REPETICIONES)[number];
 export type ConexionGoogle = typeof conexionGoogle.$inferSelect;
+
+/* ── Hogar: lista de la compra, limpieza y pelis/series ───────────────── */
+
+/**
+ * Producto de la lista de la compra. Al comprarlo no se borra: se marca con
+ * `compradoEn`, así queda registro de cuándo cambió la lista y se puede volver
+ * a añadir con un toque desde «Comprado hace poco».
+ */
+export const productoCompra = sqliteTable(
+  "producto_compra",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    hogarId: text("hogar_id")
+      .notNull()
+      .references(() => hogar.id, { onDelete: "cascade" }),
+    nombre: text("nombre").notNull(),
+    cantidad: text("cantidad"),
+    creadoPor: text("creado_por").references(() => user.id, { onDelete: "set null" }),
+    compradoEn: integer("comprado_en", { mode: "timestamp_ms" }),
+    compradoPor: text("comprado_por").references(() => user.id, { onDelete: "set null" }),
+    ...timestamps,
+  },
+  (t) => [index("producto_compra_hogar_idx").on(t.hogarId, t.compradoEn)],
+);
+
+/** Un día de limpieza: fecha, tiempo trabajado y precio por hora de ese día. */
+export const jornadaLimpieza = sqliteTable(
+  "jornada_limpieza",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    hogarId: text("hogar_id")
+      .notNull()
+      .references(() => hogar.id, { onDelete: "cascade" }),
+    /** Día en hora de Madrid (YYYY-MM-DD) */
+    fecha: text("fecha").notNull(),
+    /** Tiempo trabajado en minutos (admite medias horas) */
+    minutos: integer("minutos").notNull(),
+    /** Precio por hora en céntimos, guardado en cada día por si cambia la tarifa */
+    tarifaCentimos: integer("tarifa_centimos").notNull().default(1000),
+    notas: text("notas"),
+    pagado: integer("pagado", { mode: "boolean" }).notNull().default(false),
+    creadoPor: text("creado_por").references(() => user.id, { onDelete: "set null" }),
+    ...timestamps,
+  },
+  (t) => [index("jornada_limpieza_hogar_idx").on(t.hogarId, t.fecha)],
+);
+
+export const TIPOS_TITULO = ["pelicula", "serie"] as const;
+
+/** Película o serie pendiente de ver. Al verla se marca con `vistaEn`. */
+export const titulo = sqliteTable(
+  "titulo",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    hogarId: text("hogar_id")
+      .notNull()
+      .references(() => hogar.id, { onDelete: "cascade" }),
+    nombre: text("nombre").notNull(),
+    tipo: text("tipo", { enum: TIPOS_TITULO }).notNull().default("pelicula"),
+    /** Netflix, HBO, cine… */
+    plataforma: text("plataforma"),
+    notas: text("notas"),
+    creadoPor: text("creado_por").references(() => user.id, { onDelete: "set null" }),
+    vistaEn: integer("vista_en", { mode: "timestamp_ms" }),
+    ...timestamps,
+  },
+  (t) => [index("titulo_hogar_idx").on(t.hogarId, t.vistaEn)],
+);
+
+export type ProductoCompra = typeof productoCompra.$inferSelect;
+export type JornadaLimpieza = typeof jornadaLimpieza.$inferSelect;
+export type Titulo = typeof titulo.$inferSelect;
+export type TipoTitulo = (typeof TIPOS_TITULO)[number];

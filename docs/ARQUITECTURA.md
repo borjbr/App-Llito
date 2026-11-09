@@ -72,7 +72,7 @@ docs/                este documento
 - Catálogo de alimentos en `src/lib/alimentos.ts`: categorías con sus productos y avisos para bebés (miel, sal, espinacas, uvas enteras…). El formulario usa dos selects encadenados (tipo → ingrediente) con «Otro» para escribir uno nuevo; sin JavaScript, el select de ingrediente muestra todo el catálogo agrupado.
 - Si un producto está en el catálogo, su categoría y su nombre los pone el catálogo.
 
-### Asistente Llito
+### Asistente Kissbell
 
 - `POST /api/chat` recibe solo el mensaje nuevo; el historial se lee de `mensaje_chat` (cada persona tiene su conversación) y se responde con el stream de mensajes del AI SDK.
 - **La memoria vive en la base de datos, no en el modelo.** El recetario es la fuente de verdad: el modelo tiene la lista de recetas en sus instrucciones y usa herramientas:
@@ -85,9 +85,22 @@ docs/                este documento
 - Límite de mensajes por hogar cada 24 horas (`ASISTENTE_LIMITE_DIARIO`, 100 por defecto) y como mucho 6 pasos de herramientas por respuesta.
 - Cliente sin framework (`src/scripts/chat.ts`, ~9 KB): lee el stream SSE, pinta texto (markdown mínimo que escapa todo el HTML) y tarjetas, y anuncia la respuesta a los lectores de pantalla.
 
+### Hogar
+
+- `/hogar` es el menú de la sección: Agenda, Lista de la compra, María Eugenia (limpieza) y Pelis y series, cada una con su dato resumido.
+- **Patrón común**: lo hecho no se borra al momento, se marca con fecha (`comprado_en`, `vista_en`). Desaparece de la lista principal, queda en un historial plegable desde el que se puede deshacer, y así hay registro de cuándo cambió la lista.
+- Tabla `producto_compra`: nombre, cantidad, quién lo apuntó y quién lo compró. «Aceite, sal y leche» se apunta como tres productos y no se duplican los pendientes. La «última actualización» es el `updated_at` más reciente; los pendientes se agrupan por el día en que se apuntaron. Lo comprado se borra solo a los 30 días.
+- Tabla `jornada_limpieza`: día, minutos trabajados, precio por hora en céntimos (se guarda en cada día por si cambia la tarifa; 10 € por defecto, en `LIMPIEZA` de `src/lib/hogar.ts`), notas y `pagado`. Se agrupa por semanas de lunes a domingo con su total, y cada semana se marca como pagada de una vez.
+- Tabla `titulo`: película o serie, plataforma y `vista_en`, con filtro por tipo.
+- Kissbell puede leer y apuntar en la lista de la compra (`ver_lista_compra`, `anadir_a_la_compra`).
+
+### Inicio
+
+- Aviso destacado con lo que queda de hoy y lo de mañana (de la agenda). Se puede cerrar; vuelve a salir si cambia lo que hay apuntado (la clave se guarda en `localStorage`).
+- Dos columnas a partir de 1024 px; menú inferior en el móvil y superior desde 768 px.
+
 ## Próximos pasos
 
 1. Hijos: tomas y comidas.
 2. Hijos: salud y crecimiento (con gráfica).
-3. Hogar: lista de la compra.
-4. PWA instalable y resumen del día más completo en Inicio.
+3. PWA instalable y resumen del día más completo en Inicio.

@@ -1,5 +1,5 @@
 /**
- * Chat con Llito. Recibe solo el mensaje nuevo: el historial se lee de la base
+ * Chat con Kissbell. Recibe solo el mensaje nuevo: el historial se lee de la base
  * de datos, así nadie puede inyectar respuestas falsas desde el navegador.
  * Responde con el stream de mensajes del AI SDK (texto + tarjetas de herramientas).
  */
@@ -22,7 +22,10 @@ function mensajeDeError(error: unknown): string {
   if (APICallError.isInstance(error)) {
     if (error.statusCode === 401) return "La clave de OpenAI no es válida. Revisa OPENAI_API_KEY en Vercel.";
     if (error.statusCode === 429) return "OpenAI ha rechazado la petición por límite de uso o falta de saldo. Revisa la facturación de tu cuenta de OpenAI.";
-    if (error.statusCode === 404) return "El modelo configurado no existe o tu cuenta no tiene acceso. Revisa OPENAI_MODEL.";
+    if (error.statusCode === 404 || (error.statusCode === 403 && /model/i.test(error.responseBody ?? ""))) {
+      return `Tu proyecto de OpenAI no tiene acceso al modelo «${OPENAI_MODEL}». En platform.openai.com añade saldo (Settings → Billing) y permite el modelo en el proyecto (Settings → Projects → Limits → Model usage), o cambia OPENAI_MODEL en Vercel.`;
+    }
+    if (error.statusCode === 403) return "OpenAI ha rechazado la petición (403). Revisa los permisos de la clave y del proyecto en platform.openai.com.";
   }
   return "No he podido responder. Inténtalo de nuevo en un momento.";
 }
@@ -30,7 +33,7 @@ function mensajeDeError(error: unknown): string {
 export const POST: APIRoute = async ({ request, locals, url }) => {
   const usuario = locals.user;
   const hogar = locals.hogar;
-  if (!usuario || !hogar) return json({ error: "Inicia sesión para hablar con Llito." }, 401);
+  if (!usuario || !hogar) return json({ error: "Inicia sesión para hablar con Kissbell." }, 401);
   // JSON no pasa por la comprobación de origen de Astro (solo mira formularios): se comprueba aquí
   if (request.headers.get("origin") !== url.origin) return json({ error: "Origen no permitido." }, 403);
   if (!OPENAI_API_KEY) return json({ error: "El asistente todavía no está configurado: falta la variable OPENAI_API_KEY." }, 503);

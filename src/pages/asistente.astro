@@ -58,29 +58,32 @@ const sugerencias = [
 const ok = Astro.url.searchParams.get("ok");
 ---
 
-<App title="Llito">
+<App title="Kissbell">
   <div class="chat" data-chat>
     <header class="chat-cabecera">
       <span class="llito-grande" aria-hidden="true">✨</span>
       <div class="grid gap-0.5 min-w-0">
-        <h1>Llito</h1>
-        <p class="hint">El asistente de {hogar.nombre}. Recuerda vuestras recetas y lo que le cuentes.</p>
+        <h1>Kissbell</h1>
+        <p class="hint chat-sub">Recuerda vuestras recetas y lo que le cuentes.</p>
       </div>
       {
         historial.length > 0 && (
           <form method="post" class="chat-nueva">
             <input type="hidden" name="accion" value="nueva" />
-            <button class="btn btn-ghost" type="submit">Nueva conversación</button>
+            <button class="btn btn-secondary" type="submit" aria-label="Nueva conversación">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
+              <span class="chat-nueva-texto">Nueva</span>
+            </button>
           </form>
         )
       }
     </header>
 
-    {ok === "nueva" && <div class="alert alert-ok" role="status"><p>Conversación nueva. Las recetas y lo que Llito recuerda se mantienen.</p></div>}
+    {ok === "nueva" && <div class="alert alert-ok" role="status"><p>Conversación nueva. Las recetas y lo que Kissbell recuerda se mantienen.</p></div>}
 
     <details class="memoria" id="memoria" open={ok === "olvidado" ? true : undefined}>
       <summary>
-        <span aria-hidden="true">🧠</span> Lo que Llito recuerda de la familia
+        <span aria-hidden="true">🧠</span> Lo que recuerda de la familia
         <span class="memoria-total">{memorias.length}</span>
       </summary>
       {
@@ -130,13 +133,13 @@ const ok = Astro.url.searchParams.get("ok");
       configurado ? (
         <div class="composer-zona">
           <form class="composer" data-composer>
-            <label for="mensaje" class="sr-only">Escribe a Llito</label>
+            <label for="mensaje" class="sr-only">Escribe a Kissbell</label>
             <textarea id="mensaje" data-campo rows="1" maxlength={MAX_MENSAJE} placeholder="Pregúntale lo que quieras…" enterkeyhint="send" autocomplete="off" />
             <button class="composer-enviar" type="submit" data-enviar aria-label="Enviar" disabled>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
             </button>
           </form>
-          <p class="hint composer-aviso">Llito puede equivocarse. Para dudas de salud, consulta con el pediatra.</p>
+          <p class="hint composer-aviso">Kissbell puede equivocarse. Para dudas de salud, consulta con el pediatra.</p>
         </div>
       ) : (
         <div class="card grid gap-2">
@@ -173,7 +176,15 @@ const ok = Astro.url.searchParams.get("ok");
     font-size: 1.6rem;
     background: linear-gradient(135deg, var(--accent-soft), var(--hijos-soft));
   }
-  .chat-nueva .btn { padding-inline: 0.6rem; font-size: 0.92rem; }
+  .chat-cabecera h1 { font-size: 1.6rem; }
+  .chat-sub { line-height: 1.35; }
+  .chat-nueva .btn { padding-inline: 0.85rem; font-size: 0.92rem; gap: 0.35rem; }
+  .chat-nueva svg { width: 1.1rem; height: 1.1rem; }
+  /* En pantallas muy estrechas, solo el icono */
+  @media (max-width: 380px) {
+    .chat-nueva-texto { display: none; }
+    .chat-nueva .btn { width: var(--tap); padding: 0; }
+  }
 
   .memoria {
     border-radius: var(--radius);

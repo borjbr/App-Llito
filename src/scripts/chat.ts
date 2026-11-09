@@ -1,5 +1,5 @@
 /**
- * Cliente del chat de Llito: envía el mensaje, lee el stream del AI SDK y
+ * Cliente del chat de Kissbell: envía el mensaje, lee el stream del AI SDK y
  * pinta texto y tarjetas de receta a medida que llegan.
  */
 import type { UIMessage, UIMessageChunk } from "ai";
@@ -95,6 +95,14 @@ function pintarParte(p: Parte): HTMLElement | null {
     if (!listo || !out || out.error) return null;
     return h("p", { class: "nota-memoria" }, h("span", { "aria-hidden": "true" }, "🧠 "), nombre === "recordar" ? "Lo recordaré: " : "Olvidado: ", h("span", {}, String(out.texto ?? "")));
   }
+  if (nombre === "anadir_a_la_compra") {
+    if (!listo) return trabajando("Apuntando en la lista de la compra…");
+    const anadidos = (out?.anadidos as string[] | undefined) ?? [];
+    if (!anadidos.length) return null;
+    const nota = h("a", { class: "nota-memoria", href: "/hogar/compra" }, h("span", { "aria-hidden": "true" }, "🛒 "), "Apuntado en la compra: ", h("span", {}, anadidos.join(", ")));
+    return nota;
+  }
+  if (nombre === "ver_lista_compra") return listo ? null : trabajando("Mirando la lista de la compra…");
   if (nombre === "buscar_recetas") return listo ? null : trabajando("Buscando en el recetario…");
   return null;
 }
@@ -235,7 +243,7 @@ export function iniciarChat(raiz: HTMLElement) {
 
   function burbujaLlito() {
     const contenido = h("div", { class: "contenido" });
-    const li = h("li", { class: "msg msg-llito" }, h("span", { class: "avatar-llito", "aria-hidden": "true" }, "✨"), h("h2", { class: "sr-only" }, "Llito:"), contenido);
+    const li = h("li", { class: "msg msg-llito" }, h("span", { class: "avatar-llito", "aria-hidden": "true" }, "✨"), h("h2", { class: "sr-only" }, "Kissbell:"), contenido);
     lista.append(li);
     return contenido;
   }
@@ -309,7 +317,7 @@ export function iniciarChat(raiz: HTMLElement) {
     const contenido = burbujaLlito();
     contenido.append(escribiendo());
     alFinal();
-    anunciar("Llito está escribiendo…");
+    anunciar("Kissbell está escribiendo…");
 
     let ultimo: UIMessage | null = null;
     let errorStream = "";
@@ -353,7 +361,7 @@ export function iniciarChat(raiz: HTMLElement) {
       if (ultimo) pintarMensaje(contenido, ultimo, false);
       else contenido.replaceChildren();
       if (errorStream) pintarError(contenido, errorStream);
-      anunciar(errorStream || `Llito: ${ultimo ? textoPlano(ultimo) : ""}`);
+      anunciar(errorStream || `Kissbell: ${ultimo ? textoPlano(ultimo) : ""}`);
     } catch {
       if (ultimo) pintarMensaje(contenido, ultimo, false);
       else contenido.replaceChildren();

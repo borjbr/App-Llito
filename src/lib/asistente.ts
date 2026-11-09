@@ -1,5 +1,5 @@
 /**
- * Llito, el asistente de la familia (Vercel AI SDK + OpenAI).
+ * Kissbell, el asistente de la familia (Vercel AI SDK + OpenAI).
  *
  * Idea clave: lo que el asistente "recuerda" vive en la base de datos, no en
  * la conversación. Las recetas se guardan en el recetario y se muestran tal
@@ -8,9 +8,9 @@
  */
 import { tool, type UIMessage } from "ai";
 import { z } from "zod";
-import { and, asc, count, desc, eq, gte } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
-import { CATEGORIAS_ALIMENTO, memoria, mensajeChat } from "@/db/schema";
+import { CATEGORIAS_ALIMENTO, memoria, mensajeChat, productoCompra } from "@/db/schema";
 import { hijosDe, miembrosDe } from "./familia";
 import { fechaLarga, fechaMadrid } from "./fechas";
 import { normalizar, textoEdad } from "./alimentos";
@@ -50,7 +50,7 @@ export function instrucciones(c: Contexto): string {
   const hijos = c.hijos.map((h) => h.nombre);
   const adultos = c.miembros.map((m) => m.nombre);
 
-  return `Eres Llito, el asistente de la familia «${c.hogarNombre}» en la app App-Llito. Ayudas en el día a día de la pareja y en el cuidado de los hijos: recetas y alimentación, organización de casa, ideas y dudas cotidianas.
+  return `Eres Kissbell, el asistente de la familia «${c.hogarNombre}» en la app App-Llito. Ayudas en el día a día de la pareja y en el cuidado de los hijos: recetas y alimentación, organización de casa, ideas y dudas cotidianas.
 
 # Contexto
 - Hoy es ${fechaLarga(hoy)} (${hoy}), hora de Madrid.
@@ -76,6 +76,11 @@ ${c.memorias.length ? c.memorias.map((m) => `- id: ${m.id} · ${m.texto}`).join(
 - Si algo deja de ser cierto, llama a olvidar con el id antiguo y, si procede, recordar con el dato nuevo.
 - Usa estos datos para personalizar respuestas y recetas (por ejemplo, evita alimentos que no le sientan bien).
 - No guardes contraseñas, números de documentos ni datos bancarios.
+
+# Lista de la compra
+- La familia tiene una lista de la compra compartida en Hogar → Lista de la compra (/hogar/compra).
+- Si piden apuntar algo («añade leche», «apunta lo que falta para esta receta»), usa anadir_a_la_compra. Para saber qué falta, ver_lista_compra.
+- Después, confirma en una frase lo que has apuntado.
 
 # Alimentación infantil
 Para recetas de bebés sigue las pautas generales de la AEP y la AESAN:
@@ -167,6 +172,47 @@ export function herramientas(ctx: { hogarId: string; userId: string }) {
         if (total >= MAX_MEMORIAS) return { error: `La memoria está llena (${MAX_MEMORIAS} datos). Pide que borren alguno desde la página del asistente.` };
         const [fila] = await db.insert(memoria).values({ hogarId: ctx.hogarId, texto: limpio, creadoPor: ctx.userId }).returning();
         return { id: fila.id, texto: fila.texto };
+      },
+    }),
+
+    ver_lista_compra: tool({
+      description: "Devuelve los productos que faltan en la lista de la compra del hogar.",
+      inputSchema: z.object({}),
+      execute: async () => {
+        const filas = await db
+          .select({ nombre: productoCompra.nombre, cantidad: productoCompra.cantidad })
+          .from(productoCompra)
+          .where(and(eq(productoCompra.hogarId, ctx.hogarId), isNull(productoCompra.compradoEn)));
+        return { productos: filas.map((f) => (f.cantidad ? `${f.nombre} (${f.cantidad})` : f.nombre)) };
+      },
+    }),
+
+    anadir_a_la_compra: tool({
+      description: "Apunta productos en la lista de la compra compartida del hogar. No duplica los que ya están.",
+      inputSchema: z.object({
+        productos: z
+          .array(z.object({ nombre: z.string().describe("Producto, por ejemplo «Aceite de oliva»"), cantidad: textoOpcional("Por ejemplo «2 botellas»") }))
+          .min(1)
+          .max(30),
+      }),
+      execute: async ({ productos }) => {
+        const yaEstan = new Set(
+          (
+            await db
+              .select({ nombre: productoCompra.nombre })
+              .from(productoCompra)
+              .where(and(eq(productoCompra.hogarId, ctx.hogarId), isNull(productoCompra.compradoEn)))
+          ).map((p) => normalizar(p.nombre)),
+        );
+        const ahora = new Date();
+        const nuevos = productos
+          .map((p) => ({ nombre: p.nombre.trim().slice(0, 80), cantidad: p.cantidad?.trim().slice(0, 40) || null }))
+          .filter((p) => p.nombre && !yaEstan.has(normalizar(p.nombre)))
+          .map((p) => ({ ...p, nombre: p.nombre.charAt(0).toUpperCase() + p.nombre.slice(1) }));
+        if (nuevos.length) {
+          await db.insert(productoCompra).values(nuevos.map((p) => ({ ...p, hogarId: ctx.hogarId, creadoPor: ctx.userId, createdAt: ahora, updatedAt: ahora })));
+        }
+        return { anadidos: nuevos.map((p) => p.nombre), yaEstaban: productos.length - nuevos.length };
       },
     }),
 

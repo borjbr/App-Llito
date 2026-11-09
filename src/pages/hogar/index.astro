@@ -1,30 +1,110 @@
 ---
 import App from "@/layouts/App.astro";
+import { and, count, eq, isNull } from "drizzle-orm";
+import { db } from "@/db/client";
+import { productoCompra, titulo } from "@/db/schema";
+import { eventosEnRango } from "@/lib/eventos";
+import { fechaMadrid, sumarDias } from "@/lib/fechas";
+import { formatoEuros, LIMPIEZA, pendienteLimpieza } from "@/lib/hogar";
 
-const proximamente = [
-  { icono: "✅", titulo: "Tareas", texto: "Repartid las tareas de casa y marcad lo hecho." },
-  { icono: "🛒", titulo: "Lista de la compra", texto: "Una lista compartida que se actualiza para los dos." },
-  { icono: "📅", titulo: "Agenda", texto: "Citas, cumpleaños y planes de la familia." },
+const hogar = Astro.locals.hogar!;
+const hoy = fechaMadrid();
+
+const [semana, [compra], [pelis], limpieza] = await Promise.all([
+  eventosEnRango(hogar.id, hoy, sumarDias(hoy, 7)),
+  db.select({ n: count() }).from(productoCompra).where(and(eq(productoCompra.hogarId, hogar.id), isNull(productoCompra.compradoEn))),
+  db.select({ n: count() }).from(titulo).where(and(eq(titulo.hogarId, hogar.id), isNull(titulo.vistaEn))),
+  pendienteLimpieza(hogar.id),
+]);
+const proximos = semana.filter((e) => !(e.tipo === "tarea" && e.completado)).length;
+const plural = (n: number, uno: string, varios: string) => `${n} ${n === 1 ? uno : varios}`;
+
+const secciones = [
+  {
+    href: "/agenda",
+    icono: "📅",
+    titulo: "Agenda",
+    texto: "Citas, cumpleaños, planes y tareas de la familia.",
+    dato: proximos ? plural(proximos, "cosa esta semana", "cosas esta semana") : "Nada esta semana",
+  },
+  {
+    href: "/hogar/compra",
+    icono: "🛒",
+    titulo: "Lista de la compra",
+    texto: "Lo que falta en casa, compartido entre los dos.",
+    dato: compra.n ? plural(compra.n, "producto", "productos") : "Lista vacía",
+  },
+  {
+    href: "/hogar/limpieza",
+    icono: "🧽",
+    titulo: LIMPIEZA.nombre,
+    texto: "Días y horas de limpieza, y lo que hay que pagar.",
+    dato: limpieza.centimos ? `${formatoEuros(limpieza.centimos)} pendiente` : "Todo pagado",
+  },
+  {
+    href: "/hogar/pelis",
+    icono: "🍿",
+    titulo: "Pelis y series",
+    texto: "Lo que queréis ver. Al verlo, se tacha.",
+    dato: pelis.n ? plural(pelis.n, "pendiente", "pendientes") : "Nada pendiente",
+  },
 ];
 ---
 
 <App title="Hogar">
-  <header class="grid gap-2">
+  <header class="grid gap-1">
     <h1 style="color: var(--hogar);">Hogar</h1>
-    <p class="text-muted">Lo que vamos a construir en esta sección:</p>
+    <p class="text-muted">La organización de casa, para los dos.</p>
   </header>
-  <ul class="grid gap-3 list-none p-0 m-0">
+
+  <ul class="hogar-grid">
     {
-      proximamente.map((m) => (
-        <li class="card flex items-start gap-4">
-          <span class="text-3xl" aria-hidden="true">{m.icono}</span>
-          <div class="grid gap-1 min-w-0">
-            <h2>{m.titulo}</h2>
-            <p class="text-muted">{m.texto}</p>
-            <p class="text-sm font-bold" style="color: var(--hogar);">Próximamente</p>
-          </div>
+      secciones.map((s) => (
+        <li>
+          <a href={s.href} class="hogar-tarjeta">
+            <span class="hogar-icono" aria-hidden="true">{s.icono}</span>
+            <span class="grid gap-1 min-w-0">
+              <span class="hogar-titulo">{s.titulo}</span>
+              <span class="hogar-texto">{s.texto}</span>
+              <span class="chip justify-self-start">{s.dato}</span>
+            </span>
+            <span class="hogar-flecha" aria-hidden="true">→</span>
+          </a>
         </li>
       ))
     }
   </ul>
 </App>
+
+<style>
+  .hogar-grid { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.85rem; }
+  @media (min-width: 640px) { .hogar-grid { grid-template-columns: 1fr 1fr; } }
+  .hogar-grid li { display: grid; }
+  .hogar-tarjeta {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.1rem;
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    border: 2px solid var(--line);
+    color: var(--ink);
+    text-decoration: none;
+    transition: border-color 0.15s, transform 0.1s;
+  }
+  .hogar-tarjeta:hover { border-color: var(--hogar); }
+  .hogar-tarjeta:active { transform: scale(0.99); }
+  .hogar-icono {
+    display: grid;
+    place-items: center;
+    width: 3.25rem;
+    height: 3.25rem;
+    border-radius: 16px;
+    background: var(--hogar-soft);
+    font-size: 1.7rem;
+  }
+  .hogar-titulo { font-family: var(--font-display); font-size: 1.2rem; font-weight: 700; }
+  .hogar-texto { color: var(--muted); font-size: 0.92rem; }
+  .hogar-flecha { color: var(--hogar); font-size: 1.3rem; font-weight: 700; }
+</style>
