@@ -68,7 +68,8 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     stopWhen: stepCountIs(6),
     maxOutputTokens: 4000,
     // store: false → OpenAI no conserva la conversación; el historial vive en nuestra BD
-    providerOptions: { openai: { reasoningEffort: "low", store: false } },
+    // reasoningEffort solo existe en modelos de razonamiento (gpt-5, o3…); en gpt-4o-mini da un aviso
+    providerOptions: { openai: { store: false, ...(/^(gpt-5|o\d)/.test(OPENAI_MODEL) ? { reasoningEffort: "low" } : {}) } },
   });
 
   return resultado.toUIMessageStreamResponse({
