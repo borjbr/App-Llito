@@ -32,7 +32,7 @@ const pregunta = encodeURIComponent(`Sobre la receta «${r.titulo}»: `);
 <App title={r.titulo}>
   <header class="grid gap-3">
     <a href="/hijos/recetas" class="btn btn-ghost justify-self-start -ml-3"><span aria-hidden="true">←</span> Recetario</a>
-    {r.origen === "asistente" && <p class="chip-llito justify-self-start"><span aria-hidden="true">✨</span> Receta de Llito</p>}
+    {r.origen === "asistente" && <p class="chip-llito justify-self-start"><span aria-hidden="true">✨</span> Receta de Kissbell</p>}
     <h1 class="break-words">{r.titulo}</h1>
     {r.descripcion && <p class="text-muted text-lg">{r.descripcion}</p>}
     {
@@ -101,7 +101,7 @@ const pregunta = encodeURIComponent(`Sobre la receta «${r.titulo}»: `);
 
   <div class="grid gap-3 sm:grid-cols-2">
     <a href={`/hijos/recetas/${r.id}/editar`} class="btn btn-primary">Editar receta</a>
-    <a href={`/asistente?q=${pregunta}`} class="btn btn-secondary"><span aria-hidden="true">✨</span> Preguntar a Llito</a>
+    <a href={`/asistente?q=${pregunta}`} class="btn btn-secondary"><span aria-hidden="true">✨</span> Preguntar a Kissbell</a>
   </div>
   {
     !confirmarBorrado && (

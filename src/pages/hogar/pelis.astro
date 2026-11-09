@@ -1,0 +1,218 @@
+---
+import App from "@/layouts/App.astro";
+import { and, eq, isNotNull } from "drizzle-orm";
+import { db } from "@/db/client";
+import { titulo, TIPOS_TITULO, type TipoTitulo, type Titulo } from "@/db/schema";
+import { normalizar } from "@/lib/alimentos";
+import { fechaMadrid, nombreDia } from "@/lib/fechas";
+import { campo, listaTitulos } from "@/lib/hogar";
+
+const usuario = Astro.locals.user!;
+const hogar = Astro.locals.hogar!;
+const TIPOS: Record<TipoTitulo, { nombre: string; plural: string; emoji: string }> = {
+  pelicula: { nombre: "Película", plural: "Películas", emoji: "🎬" },
+  serie: { nombre: "Serie", plural: "Series", emoji: "📺" },
+};
+const PLATAFORMAS = ["Netflix", "HBO Max", "Prime Video", "Disney+", "Movistar Plus+", "Apple TV+", "Filmin", "SkyShowtime", "RTVE Play", "Cine"];
+const esTipo = (t: string): t is TipoTitulo => (TIPOS_TITULO as readonly string[]).includes(t);
+
+const filtroParam = Astro.url.searchParams.get("tipo") ?? "";
+const filtro = esTipo(filtroParam) ? filtroParam : null;
+const aqui = filtro ? `/hogar/pelis?tipo=${filtro}` : "/hogar/pelis";
+const con = (params: string) => `${aqui}${aqui.includes("?") ? "&" : "?"}${params}`;
+
+let error = "";
+let valores = { nombre: "", tipo: (filtro ?? "pelicula") as TipoTitulo, plataforma: "" };
+
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  const accion = String(form.get("accion") ?? "");
+  const id = String(form.get("id") ?? "");
+  const ahora = new Date();
+  const delHogar = and(eq(titulo.id, id), eq(titulo.hogarId, hogar.id));
+
+  if (accion === "anadir") {
+    const tipo = String(form.get("tipo") ?? "");
+    valores = { nombre: campo(form, "nombre", 120) ?? "", tipo: esTipo(tipo) ? tipo : "pelicula", plataforma: campo(form, "plataforma", 40) ?? "" };
+    if (!valores.nombre) {
+      error = "Escribe el título.";
+    } else {
+      const { pendientes } = await listaTitulos(hogar.id);
+      const repetido = pendientes.some((t) => normalizar(t.nombre) === normalizar(valores.nombre));
+      if (!repetido) {
+        await db.insert(titulo).values({
+          hogarId: hogar.id,
+          nombre: valores.nombre,
+          tipo: valores.tipo,
+          plataforma: valores.plataforma || null,
+          creadoPor: usuario.id,
+          createdAt: ahora,
+          updatedAt: ahora,
+        });
+      }
+      return Astro.redirect(con(`ok=${repetido ? "repetido" : "anadido"}`), 303);
+    }
+  } else if (accion === "vista") {
+    await db.update(titulo).set({ vistaEn: ahora, updatedAt: ahora }).where(delHogar);
+    return Astro.redirect(con("ok=vista"), 303);
+  } else if (accion === "pendiente") {
+    await db.update(titulo).set({ vistaEn: null, updatedAt: ahora }).where(delHogar);
+    return Astro.redirect(con("ok=pendiente"), 303);
+  } else if (accion === "borrar") {
+    await db.delete(titulo).where(delHogar);
+    return Astro.redirect(con("ok=borrado"), 303);
+  } else if (accion === "limpiar") {
+    await db.delete(titulo).where(and(eq(titulo.hogarId, hogar.id), isNotNull(titulo.vistaEn)));
+    return Astro.redirect(con("ok=limpio"), 303);
+  }
+}
+
+const { pendientes: todos, vistos } = await listaTitulos(hogar.id);
+const pendientes = filtro ? todos.filter((t) => t.tipo === filtro) : todos;
+const cuenta = (t: TipoTitulo) => todos.filter((x) => x.tipo === t).length;
+const hoy = fechaMadrid();
+const detalle = (t: Titulo) => [TIPOS[t.tipo].nombre, t.plataforma].filter(Boolean).join(" · ");
+
+const MENSAJES: Record<string, string> = {
+  anadido: "Apuntada en la lista.",
+  repetido: "Ya estaba en la lista.",
+  vista: "Marcada como vista. ¿Qué tal estuvo?",
+  pendiente: "Vuelve a estar pendiente.",
+  borrado: "Borrada de la lista.",
+  limpio: "Historial borrado.",
+};
+const ok = MENSAJES[Astro.url.searchParams.get("ok") ?? ""];
+---
+
+<App title="Pelis y series">
+  <header class="grid gap-2">
+    <a href="/hogar" class="btn btn-ghost volver"><span aria-hidden="true">←</span> Hogar</a>
+    <h1 style="color: var(--hogar);">Pelis y series</h1>
+    <p class="text-muted">Lo que os apetece ver. Cuando la veáis, márcala y desaparece de la lista.</p>
+  </header>
+
+  {ok && <div class="alert alert-ok" role="status"><p>{ok}</p></div>}
+
+  <form method="post" action={aqui} class="form-alta" novalidate>
+    <input type="hidden" name="accion" value="anadir" />
+    <fieldset class="grid gap-2">
+      <legend class="label">Es una…</legend>
+      <div class="segmented">
+        {
+          TIPOS_TITULO.map((t) => (
+            <label>
+              <input type="radio" name="tipo" value={t} checked={valores.tipo === t} />
+              <span><span aria-hidden="true">{TIPOS[t].emoji}&nbsp;</span>{TIPOS[t].nombre}</span>
+            </label>
+          ))
+        }
+      </div>
+    </fieldset>
+    <div class="form-alta-linea con-extra">
+      <div class="field">
+        <label class="label" for="nombre">Título</label>
+        <input
+          class="input"
+          id="nombre"
+          name="nombre"
+          value={valores.nombre}
+          required
+          maxlength="120"
+          autocomplete="off"
+          placeholder="Ej.: La sociedad de la nieve"
+          aria-invalid={error ? "true" : undefined}
+          aria-describedby={error ? "nombre-error" : undefined}
+          autofocus={error ? true : undefined}
+        />
+      </div>
+      <div class="field">
+        <label class="label" for="plataforma">Dónde <span class="hint">(opcional)</span></label>
+        <input class="input" id="plataforma" name="plataforma" list="plataformas" maxlength="40" value={valores.plataforma} autocomplete="off" placeholder="Netflix" />
+        <datalist id="plataformas">{PLATAFORMAS.map((p) => <option value={p} />)}</datalist>
+      </div>
+      <button class="btn btn-primary" type="submit"><span aria-hidden="true">＋</span> Añadir</button>
+    </div>
+    {error && <p class="field-error" id="nombre-error">{error}</p>}
+  </form>
+
+  <section class="grid gap-3" aria-labelledby="titulo-lista">
+    <h2 id="titulo-lista">Por ver</h2>
+    <nav class="pestanas" aria-label="Filtrar">
+      <a href="/hogar/pelis" aria-current={!filtro ? "page" : undefined}>Todo <span class="num">{todos.length}</span></a>
+      {
+        TIPOS_TITULO.map((t) => (
+          <a href={`/hogar/pelis?tipo=${t}`} aria-current={filtro === t ? "page" : undefined}>
+            <span aria-hidden="true">{TIPOS[t].emoji}</span> {TIPOS[t].plural} <span class="num">{cuenta(t)}</span>
+          </a>
+        ))
+      }
+    </nav>
+
+    {
+      pendientes.length === 0 ? (
+        <div class="card vacio-lista">
+          <span class="emoji" aria-hidden="true">🍿</span>
+          <p>{filtro ? `No hay ${TIPOS[filtro].plural.toLowerCase()} pendientes.` : "No hay nada pendiente. Apunta la próxima que os recomienden."}</p>
+        </div>
+      ) : (
+        <ul class="lista pelis">
+          {pendientes.map((t) => (
+            <li class="fila">
+              <form method="post" action={aqui}>
+                <input type="hidden" name="accion" value="vista" />
+                <input type="hidden" name="id" value={t.id} />
+                <button class="marcar" type="submit" aria-pressed="false" aria-label={`Marcar «${t.nombre}» como vista`} style="--c: var(--accent)">
+                  <span />
+                </button>
+              </form>
+              <div class="fila-texto">
+                <span class="fila-titulo"><span aria-hidden="true">{TIPOS[t.tipo].emoji} </span>{t.nombre}</span>
+                <span class="fila-detalle">{detalle(t)}</span>
+              </div>
+              <form method="post" action={aqui}>
+                <input type="hidden" name="accion" value="borrar" />
+                <input type="hidden" name="id" value={t.id} />
+                <button class="icono-btn peligro" type="submit" aria-label={`Borrar «${t.nombre}» de la lista`}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+                </button>
+              </form>
+            </li>
+          ))}
+        </ul>
+      )
+    }
+  </section>
+
+  {
+    vistos.length > 0 && (
+      <details class="historial">
+        <summary>
+          <span aria-hidden="true">👀</span> Ya vistas <span class="chip num ml-auto">{vistos.length}</span>
+        </summary>
+        <ul class="lista">
+          {vistos.map((t) => (
+            <li class="fila" data-hecha>
+              <span class="marcar hecho" aria-hidden="true"><span>✓</span></span>
+              <div class="fila-texto">
+                <span class="fila-titulo">{t.nombre}</span>
+                <span class="fila-detalle">{detalle(t)}{t.vistaEn && ` · vista ${nombreDia(fechaMadrid(t.vistaEn), hoy).toLowerCase()}`}</span>
+              </div>
+              <form method="post" action={aqui}>
+                <input type="hidden" name="accion" value="pendiente" />
+                <input type="hidden" name="id" value={t.id} />
+                <button class="icono-btn" type="submit" aria-label={`Volver a poner «${t.nombre}» como pendiente`} title="Deshacer">
+                  <span aria-hidden="true">↺</span>
+                </button>
+              </form>
+            </li>
+          ))}
+        </ul>
+        <form method="post" action={aqui} class="mt-3">
+          <input type="hidden" name="accion" value="limpiar" />
+          <button class="btn btn-ghost" type="submit" style="color: var(--danger);">Borrar historial</button>
+        </form>
+      </details>
+    )
+  }
+</App>
+

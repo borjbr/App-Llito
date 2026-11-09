@@ -1,0 +1,256 @@
+---
+import App from "@/layouts/App.astro";
+import { and, eq, gte, lte } from "drizzle-orm";
+import { db } from "@/db/client";
+import { jornadaLimpieza } from "@/db/schema";
+import { esFechaValida, fechaLarga, fechaMadrid, nombreDia, sumarDias } from "@/lib/fechas";
+import {
+  campo,
+  costeJornada,
+  formatoEuros,
+  formatoHoras,
+  LIMPIEZA,
+  leerEuros,
+  leerHoras,
+  lunesDe,
+  pendienteLimpieza,
+  semanasLimpieza,
+} from "@/lib/hogar";
+
+const usuario = Astro.locals.user!;
+const hogar = Astro.locals.hogar!;
+const hoy = fechaMadrid();
+const errores: Record<string, string> = {};
+const valores = { fecha: hoy, horas: "", tarifa: String(LIMPIEZA.tarifaCentimos / 100), notas: "" };
+
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  const accion = String(form.get("accion") ?? "");
+  const id = String(form.get("id") ?? "");
+  const ahora = new Date();
+
+  if (accion === "anadir") {
+    valores.fecha = String(form.get("fecha") ?? "");
+    valores.horas = String(form.get("horas") ?? "");
+    valores.tarifa = String(form.get("tarifa") ?? "");
+    valores.notas = campo(form, "notas", 200) ?? "";
+    const minutos = leerHoras(valores.horas);
+    const tarifa = leerEuros(valores.tarifa);
+    if (!esFechaValida(valores.fecha)) errores.fecha = "Elige un día válido.";
+    else if (valores.fecha > sumarDias(hoy, 31)) errores.fecha = "El día no puede ser de dentro de más de un mes.";
+    if (!minutos) errores.horas = "Escribe las horas, por ejemplo 3 o 3,5.";
+    if (!tarifa) errores.tarifa = "Escribe el precio por hora, por ejemplo 10.";
+    if (!Object.keys(errores).length && minutos && tarifa) {
+      await db.insert(jornadaLimpieza).values({
+        hogarId: hogar.id,
+        fecha: valores.fecha,
+        minutos,
+        tarifaCentimos: tarifa,
+        notas: valores.notas || null,
+        creadoPor: usuario.id,
+        createdAt: ahora,
+        updatedAt: ahora,
+      });
+      return Astro.redirect(`/hogar/limpieza?ok=anadido#semana-${lunesDe(valores.fecha)}`, 303);
+    }
+  } else if (accion === "borrar") {
+    await db.delete(jornadaLimpieza).where(and(eq(jornadaLimpieza.id, id), eq(jornadaLimpieza.hogarId, hogar.id)));
+    return Astro.redirect("/hogar/limpieza?ok=borrado", 303);
+  } else if (accion === "pagar-semana" || accion === "desmarcar-semana") {
+    const lunes = String(form.get("lunes") ?? "");
+    if (esFechaValida(lunes)) {
+      await db
+        .update(jornadaLimpieza)
+        .set({ pagado: accion === "pagar-semana", updatedAt: ahora })
+        .where(and(eq(jornadaLimpieza.hogarId, hogar.id), gte(jornadaLimpieza.fecha, lunes), lte(jornadaLimpieza.fecha, sumarDias(lunes, 6))));
+    }
+    return Astro.redirect(`/hogar/limpieza?ok=${accion === "pagar-semana" ? "pagado" : "desmarcado"}#semana-${lunes}`, 303);
+  }
+}
+
+const [semanas, pendiente] = await Promise.all([semanasLimpieza(hogar.id), pendienteLimpieza(hogar.id)]);
+const lunesActual = lunesDe(hoy);
+const estaSemana = semanas.find((s) => s.lunes === lunesActual);
+const mesActual = hoy.slice(0, 7);
+const delMes = semanas.flatMap((s) => s.jornadas).filter((j) => j.fecha.startsWith(mesActual));
+const centimosMes = delMes.reduce((t, j) => t + costeJornada(j), 0);
+
+const fmtCorto = new Intl.DateTimeFormat("es-ES", { day: "numeric", month: "short", timeZone: "UTC" });
+const corto = (f: string) => fmtCorto.format(new Date(`${f}T12:00:00Z`)).replace(".", "");
+const tituloSemana = (lunes: string) =>
+  lunes === lunesActual ? "Esta semana" : lunes === sumarDias(lunesActual, -7) ? "La semana pasada" : `Semana del ${corto(lunes)} al ${corto(sumarDias(lunes, 6))}`;
+
+const MENSAJES: Record<string, string> = {
+  anadido: "Día apuntado.",
+  borrado: "Día borrado.",
+  pagado: "Semana marcada como pagada.",
+  desmarcado: "La semana vuelve a estar pendiente de pago.",
+};
+const ok = MENSAJES[Astro.url.searchParams.get("ok") ?? ""];
+const hayErrores = Object.keys(errores).length > 0;
+---
+
+<App title={LIMPIEZA.nombre}>
+  <header class="grid gap-2">
+    <a href="/hogar" class="btn btn-ghost volver"><span aria-hidden="true">←</span> Hogar</a>
+    <h1 style="color: var(--hogar);">{LIMPIEZA.nombre}</h1>
+    <p class="text-muted">Apunta los días que viene y las horas. El coste se suma solo, a {formatoEuros(LIMPIEZA.tarifaCentimos)} la hora.</p>
+  </header>
+
+  {ok && <div class="alert alert-ok" role="status"><p>{ok}</p></div>}
+
+  <section class="resumen resumen-limpieza" aria-label="Resumen">
+    <div class="resumen-dato destacado">
+      <span class="hint">Esta semana</span>
+      <strong>{formatoEuros(estaSemana?.centimos ?? 0)}</strong>
+      <span class="hint num">{estaSemana ? `${formatoHoras(estaSemana.minutos)} · ${estaSemana.jornadas.length} ${estaSemana.jornadas.length === 1 ? "día" : "días"}` : "Sin días todavía"}</span>
+    </div>
+    <div class="resumen-dato">
+      <span class="hint">Por pagar</span>
+      <strong style={pendiente.centimos ? "color: var(--aviso)" : undefined}>{formatoEuros(pendiente.centimos)}</strong>
+      <span class="hint">{pendiente.dias ? `${pendiente.dias} ${pendiente.dias === 1 ? "día" : "días"}` : "Todo pagado"}</span>
+    </div>
+    <div class="resumen-dato">
+      <span class="hint first-letter:uppercase">{new Intl.DateTimeFormat("es-ES", { month: "long", timeZone: "Europe/Madrid" }).format(new Date())}</span>
+      <strong>{formatoEuros(centimosMes)}</strong>
+      <span class="hint num">{formatoHoras(delMes.reduce((t, j) => t + j.minutos, 0))}</span>
+    </div>
+  </section>
+
+  <form method="post" class="form-alta" novalidate aria-labelledby="titulo-alta">
+    <h2 id="titulo-alta" class="text-lg">Apuntar un día</h2>
+    <input type="hidden" name="accion" value="anadir" />
+    {
+      hayErrores && (
+        <div class="alert alert-error" role="alert">
+          <p>Revisa el formulario:</p>
+          <ul>{Object.entries(errores).map(([k, v]) => <li><a href={`#${k}`}>{v}</a></li>)}</ul>
+        </div>
+      )
+    }
+    <div class="alta-grid">
+      <div class="field">
+        <label class="label" for="fecha">Día</label>
+        <input class="input" type="date" id="fecha" name="fecha" value={valores.fecha} max={sumarDias(hoy, 31)} required aria-invalid={errores.fecha ? "true" : undefined} aria-describedby={errores.fecha ? "fecha-error" : undefined} />
+        {errores.fecha && <p class="field-error" id="fecha-error">{errores.fecha}</p>}
+      </div>
+      <div class="field">
+        <label class="label" for="horas">Horas</label>
+        <input class="input num" id="horas" name="horas" inputmode="decimal" placeholder="3,5" value={valores.horas} required autocomplete="off" list="horas-tipicas" aria-invalid={errores.horas ? "true" : undefined} aria-describedby={errores.horas ? "horas-error horas-ayuda" : "horas-ayuda"} />
+        <datalist id="horas-tipicas">
+          <option value="2" /><option value="3" /><option value="3,5" /><option value="4" /><option value="5" />
+        </datalist>
+        {errores.horas && <p class="field-error" id="horas-error">{errores.horas}</p>}
+        <p class="hint" id="horas-ayuda">3,5 = tres horas y media.</p>
+      </div>
+      <div class="field">
+        <label class="label" for="tarifa">€ / hora</label>
+        <input class="input num" id="tarifa" name="tarifa" inputmode="decimal" value={valores.tarifa} required autocomplete="off" aria-invalid={errores.tarifa ? "true" : undefined} aria-describedby={errores.tarifa ? "tarifa-error" : undefined} />
+        {errores.tarifa && <p class="field-error" id="tarifa-error">{errores.tarifa}</p>}
+      </div>
+    </div>
+    <div class="field">
+      <label class="label" for="notas">Notas <span class="hint">(opcional)</span></label>
+      <input class="input" id="notas" name="notas" maxlength="200" value={valores.notas} placeholder="Plancha, cristales…" autocomplete="off" />
+    </div>
+    <button class="btn btn-primary justify-self-start" type="submit"><span aria-hidden="true">＋</span> Apuntar día</button>
+  </form>
+
+  <section class="grid gap-4" aria-labelledby="titulo-registro">
+    <h2 id="titulo-registro">Registro</h2>
+    {
+      semanas.length === 0 ? (
+        <div class="card vacio-lista">
+          <span class="emoji" aria-hidden="true">🧽</span>
+          <p>Aún no hay días apuntados. Cuando venga {LIMPIEZA.nombre}, apunta el día y las horas.</p>
+        </div>
+      ) : (
+        semanas.map((s) => {
+          const pagada = s.pendiente === 0;
+          return (
+            <article class="semana card" id={`semana-${s.lunes}`} aria-labelledby={`t-${s.lunes}`}>
+              <header class="semana-cabecera">
+                <div class="grid gap-0.5 min-w-0">
+                  <h3 id={`t-${s.lunes}`}>{tituloSemana(s.lunes)}</h3>
+                  <p class="hint num">
+                    {formatoHoras(s.minutos)} · {s.jornadas.length} {s.jornadas.length === 1 ? "día" : "días"}
+                  </p>
+                </div>
+                <div class="semana-total">
+                  <strong class="num">{formatoEuros(s.centimos)}</strong>
+                  {pagada ? <span class="chip chip-ok">✓ Pagado</span> : <span class="chip chip-aviso">Pendiente</span>}
+                </div>
+              </header>
+              <ul class="lista">
+                {s.jornadas.map((j) => (
+                  <li class="fila jornada">
+                    <span class="jornada-dia" aria-hidden="true">
+                      <span>{fechaLarga(j.fecha).slice(0, 3)}</span>
+                      <strong>{Number(j.fecha.slice(8))}</strong>
+                    </span>
+                    <div class="fila-texto">
+                      <span class="fila-titulo first-letter:uppercase">{nombreDia(j.fecha, hoy)}</span>
+                      <span class="fila-detalle num">
+                        {formatoHoras(j.minutos)} × {formatoEuros(j.tarifaCentimos)} = <strong class="text-ink">{formatoEuros(costeJornada(j))}</strong>
+                        {j.notas && ` · ${j.notas}`}
+                      </span>
+                    </div>
+                    <form method="post">
+                      <input type="hidden" name="accion" value="borrar" />
+                      <input type="hidden" name="id" value={j.id} />
+                      <button class="icono-btn peligro" type="submit" aria-label={`Borrar el día ${fechaLarga(j.fecha)}`}>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" /></svg>
+                      </button>
+                    </form>
+                  </li>
+                ))}
+              </ul>
+              <form method="post">
+                <input type="hidden" name="accion" value={pagada ? "desmarcar-semana" : "pagar-semana"} />
+                <input type="hidden" name="lunes" value={s.lunes} />
+                {pagada ? (
+                  <button class="btn btn-ghost" type="submit">Marcar como no pagada</button>
+                ) : (
+                  <button class="btn btn-secondary" type="submit">
+                    <span aria-hidden="true">💶</span> Marcar semana como pagada ({formatoEuros(s.pendiente)})
+                  </button>
+                )}
+              </form>
+            </article>
+          );
+        })
+      )
+    }
+  </section>
+</App>
+
+<style>
+  .resumen-limpieza { grid-template-columns: 1fr 1fr; }
+  .resumen-limpieza > :first-child { grid-column: 1 / -1; }
+  @media (min-width: 640px) {
+    .resumen-limpieza { grid-template-columns: repeat(3, 1fr); }
+    .resumen-limpieza > :first-child { grid-column: auto; }
+  }
+  .alta-grid { display: grid; gap: 0.75rem; grid-template-columns: 1fr 1fr; align-items: start; }
+  .alta-grid > :first-child { grid-column: 1 / -1; }
+  @media (min-width: 640px) {
+    .alta-grid { grid-template-columns: 1.4fr 1fr 1fr; }
+    .alta-grid > :first-child { grid-column: auto; }
+  }
+  .semana { display: grid; gap: 0.85rem; padding: 1rem; }
+  .semana-cabecera { display: flex; justify-content: space-between; align-items: start; gap: 0.75rem; }
+  .semana-total { display: grid; justify-items: end; gap: 0.25rem; }
+  .semana-total strong { font-family: var(--font-display); font-size: 1.35rem; }
+  .jornada-dia {
+    display: grid;
+    justify-items: center;
+    width: 2.9rem;
+    padding: 0.2rem 0;
+    border-radius: 12px;
+    background: var(--hogar-soft);
+    color: var(--hogar);
+    line-height: 1.1;
+  }
+  .jornada-dia span { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; }
+  .jornada-dia strong { font-size: 1.15rem; }
+</style>

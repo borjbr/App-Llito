@@ -35,14 +35,22 @@ npm run dev                   # http://localhost:4321
    - `BETTER_AUTH_SECRET` (una clave larga y aleatoria)
    - `BETTER_AUTH_URL` (la URL de producción, por ejemplo `https://app-llito.vercel.app`)
    - `GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET` (opcionales, para Google Calendar)
-   - `OPENAI_API_KEY` (opcional, para el asistente Llito) y, si quieres, `OPENAI_MODEL` y `ASISTENTE_LIMITE_DIARIO`
+   - `OPENAI_API_KEY` (opcional, para el asistente Kissbell) y, si quieres, `OPENAI_MODEL` y `ASISTENTE_LIMITE_DIARIO`
 4. Despliega. Cada pull request genera una preview automática.
+
+## Migraciones pendientes al desplegar
+
+Después de fusionar cambios con migraciones nuevas, aplícalas a Turso desde tu equipo:
+
+```bash
+TURSO_DATABASE_URL=libsql://... TURSO_AUTH_TOKEN=... npm run db:migrate
+```
 
 ## Google Calendar
 
 La agenda se sincroniza con un calendario de Google compartido por la familia. Cómo crear el proyecto gratuito de Google Cloud y obtener las credenciales: [docs/GOOGLE-CALENDAR.md](docs/GOOGLE-CALENDAR.md).
 
-## Asistente Llito
+## Asistente Kissbell
 
 Chat con OpenAI (Vercel AI SDK) en `/asistente`, con acceso desde Inicio. Las recetas que propone se guardan en el recetario (`/hijos/recetas`) y se muestran siempre tal como están guardadas; los datos que le cuentas se guardan en su memoria, visible y editable desde la propia página.
 

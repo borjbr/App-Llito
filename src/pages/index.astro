@@ -2,8 +2,8 @@
 import App from "@/layouts/App.astro";
 import ItemEvento from "@/components/ItemEvento.astro";
 import { hijosDe, listaNombres, miembrosDe } from "@/lib/familia";
-import { eventosEnRango } from "@/lib/eventos";
-import { fechaMadrid, nombreDia, sumarDias } from "@/lib/fechas";
+import { eventosEnRango, textoHora, TIPOS } from "@/lib/eventos";
+import { fechaMadrid, horaMadrid, nombreDia, sumarDias } from "@/lib/fechas";
 import { db } from "@/db/client";
 import { mensajeChat } from "@/db/schema";
 import { and, desc, eq } from "drizzle-orm";
@@ -22,7 +22,25 @@ const [hijos, miembros, semana, ultimaPregunta] = await Promise.all([
     .orderBy(desc(mensajeChat.createdAt))
     .get(),
 ]);
-const proximos = semana.filter((e) => !(e.tipo === "tarea" && e.completado)).slice(0, 4);
+const pendientesSemana = semana.filter((e) => !(e.tipo === "tarea" && e.completado));
+const proximos = pendientesSemana.slice(0, 4);
+
+// Aviso: lo que queda de hoy y lo de mañana
+const manana = sumarDias(hoyMadrid, 1);
+const ahora = horaMadrid(new Date());
+const avisos = pendientesSemana.filter(
+  (e) => e.dia === manana || (e.dia === hoyMadrid && (e.todoElDia || !e.horaInicio || (e.horaFin ?? e.horaInicio) >= ahora)),
+);
+const avisosHoy = avisos.filter((e) => e.dia === hoyMadrid).length;
+const avisosManana = avisos.length - avisosHoy;
+const tituloAviso =
+  avisosHoy && avisosManana
+    ? "Para hoy y mañana"
+    : avisosHoy
+      ? `Hoy tienes ${avisosHoy === 1 ? "algo apuntado" : `${avisosHoy} cosas`}`
+      : `Mañana tienes ${avisosManana === 1 ? (avisos[0].tipo === "evento" ? "un plan" : "algo apuntado") : `${avisosManana} cosas`}`;
+// Clave del aviso: si cambia lo que hay, vuelve a aparecer aunque se hubiera cerrado
+const claveAviso = `${hoyMadrid}:${avisos.map((e) => `${e.id}@${e.dia}`).join(",")}`;
 const mapaHijos = new Map(hijos.map((h) => [h.id, h.nombre]));
 const mapaMiembros = new Map(miembros.map((m) => [m.id, { nombre: m.nombre, avatar: m.avatar }]));
 const nombres = hijos.map((h) => h.nombre);
@@ -57,7 +75,7 @@ const textoHijos =
     : "Añade a tus hijos en Mi perfil para empezar.";
 ---
 
-<App title="Inicio">
+<App title="Inicio" ancho>
   {
     bienvenida && (
       <div class="alert alert-ok" role="status">
@@ -66,6 +84,8 @@ const textoHijos =
     )
   }
 
+  <div class="inicio">
+  <div class="inicio-col">
   <header class="flex items-center gap-4">
     <span class="grid place-items-center size-16 shrink-0 rounded-full text-4xl" style="background: var(--surface-2);" aria-hidden="true">
       {user.avatar}
@@ -76,16 +96,63 @@ const textoHijos =
     </div>
   </header>
 
+
+  {
+    avisos.length > 0 && (
+      <section class="aviso-proximo" aria-labelledby="aviso-titulo" data-aviso={claveAviso}>
+        <span class="aviso-campana" aria-hidden="true">🔔</span>
+        <div class="grid gap-2 min-w-0">
+          <h2 id="aviso-titulo">{tituloAviso}</h2>
+          <ul class="aviso-lista">
+            {avisos.slice(0, 4).map((e) => (
+              <li>
+                <a href={`/agenda/${e.id}`}>
+                  <span class="aviso-cuando">
+                    {e.dia === hoyMadrid ? "Hoy" : "Mañana"} · {textoHora(e)}
+                  </span>
+                  <span class="aviso-que">
+                    <span aria-hidden="true">{TIPOS[e.tipo].emoji} </span>
+                    {e.titulo}
+                    {e.ubicacion && <span class="aviso-donde"> · {e.ubicacion}</span>}
+                  </span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <button type="button" class="aviso-cerrar" data-cerrar-aviso aria-label="Ocultar este aviso">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+        </button>
+      </section>
+    )
+  }
+  <script is:inline>
+    (() => {
+      const aviso = document.querySelector("[data-aviso]");
+      if (!aviso) return;
+      const clave = aviso.getAttribute("data-aviso");
+      try {
+        if (localStorage.getItem("aviso-cerrado") === clave) aviso.hidden = true;
+      } catch {}
+      aviso.querySelector("[data-cerrar-aviso]")?.addEventListener("click", () => {
+        aviso.hidden = true;
+        try {
+          localStorage.setItem("aviso-cerrado", clave);
+        } catch {}
+      });
+    })();
+  </script>
+
   <section class="llito" aria-labelledby="sec-llito">
     <div class="llito-cabecera">
       <span class="llito-icono" aria-hidden="true">✨</span>
       <div class="min-w-0">
-        <h2 id="sec-llito">Pregúntale a Llito</h2>
+        <h2 id="sec-llito">Pregúntale a Kissbell</h2>
         <p class="llito-sub">Recetas, ideas y dudas del día a día. Lo que guarda, lo recuerda.</p>
       </div>
     </div>
     <form action="/asistente" method="get" class="llito-form">
-      <label for="llito-q" class="sr-only">Pregunta para Llito</label>
+      <label for="llito-q" class="sr-only">Pregunta para Kissbell</label>
       <input
         id="llito-q"
         name="q"
@@ -96,7 +163,7 @@ const textoHijos =
         autocomplete="off"
         enterkeyhint="send"
       />
-      <button class="llito-enviar" type="submit" aria-label="Preguntar a Llito">
+      <button class="llito-enviar" type="submit" aria-label="Preguntar a Kissbell">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
       </button>
     </form>
@@ -125,6 +192,8 @@ const textoHijos =
     </span>
   </a>
 
+  </div>
+  <div class="inicio-col">
   <section aria-labelledby="sec-proximo" class="grid gap-3">
     <div class="flex items-baseline justify-between gap-2">
       <h2 id="sec-proximo">Próximos días</h2>
@@ -148,13 +217,13 @@ const textoHijos =
 
   <section aria-labelledby="sec-secciones" class="grid gap-4">
     <h2 id="sec-secciones" class="sr-only">Secciones</h2>
-    <ul class="grid gap-4 sm:grid-cols-2 list-none p-0 m-0">
+    <ul class="secciones-grid">
       <li>
         <a href="/hogar" class="seccion" style="--c: var(--hogar); --c-soft: var(--hogar-soft);">
           <span class="seccion-icono" aria-hidden="true">🏠</span>
           <span class="grid gap-1">
             <span class="seccion-titulo">Hogar</span>
-            <span class="seccion-texto">Tareas, lista de la compra y agenda de la familia.</span>
+            <span class="seccion-texto">Agenda, lista de la compra, limpieza y pelis.</span>
           </span>
           <span class="seccion-flecha" aria-hidden="true">→</span>
         </a>
@@ -171,9 +240,79 @@ const textoHijos =
       </li>
     </ul>
   </section>
+  </div>
+  </div>
 </App>
 
 <style>
+  .inicio { display: grid; gap: 1.5rem; }
+  .secciones-grid { list-style: none; margin: 0; padding: 0; display: grid; gap: 1rem; }
+  @media (min-width: 640px) and (max-width: 1023px) { .secciones-grid { grid-template-columns: 1fr 1fr; } }
+  .inicio-col { display: grid; gap: 1.5rem; align-content: start; min-width: 0; }
+  @media (min-width: 1024px) {
+    .inicio { grid-template-columns: 1.1fr 1fr; gap: 2rem; align-items: start; }
+    .inicio-col:last-child { position: sticky; top: 5.5rem; }
+  }
+  .aviso-proximo {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 0.85rem;
+    align-items: start;
+    padding: 1rem 0.5rem 1rem 1rem;
+    border-radius: var(--radius-lg);
+    background: var(--aviso-soft);
+    border: 2px solid var(--aviso);
+  }
+  .aviso-proximo[hidden] { display: none; }
+  .aviso-proximo h2 { font-size: 1.1rem; color: var(--ink); }
+  .aviso-campana {
+    display: grid;
+    place-items: center;
+    width: 2.6rem;
+    height: 2.6rem;
+    border-radius: 14px;
+    background: var(--surface);
+    font-size: 1.3rem;
+    animation: campana 1.2s ease-in-out 0.4s 2;
+    transform-origin: 50% 15%;
+  }
+  @keyframes campana {
+    0%, 100% { transform: rotate(0); }
+    20% { transform: rotate(14deg); }
+    40% { transform: rotate(-12deg); }
+    60% { transform: rotate(8deg); }
+    80% { transform: rotate(-4deg); }
+  }
+  .aviso-lista { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.35rem; }
+  .aviso-lista a {
+    display: grid;
+    gap: 0.05rem;
+    min-height: 2.75rem;
+    align-content: center;
+    padding: 0.35rem 0.7rem;
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--ink);
+    text-decoration: none;
+  }
+  .aviso-lista a:hover { outline: 2px solid var(--aviso); }
+  .aviso-cuando { font-size: 0.82rem; font-weight: 700; color: var(--aviso); font-variant-numeric: tabular-nums; }
+  .aviso-que { font-weight: 700; overflow-wrap: anywhere; }
+  .aviso-donde { font-weight: 400; color: var(--muted); }
+  .aviso-cerrar {
+    display: grid;
+    place-items: center;
+    width: var(--tap);
+    height: var(--tap);
+    margin-top: -0.5rem;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .aviso-cerrar:hover { background: var(--surface); color: var(--ink); }
+  .aviso-cerrar svg { width: 1.2rem; height: 1.2rem; }
   .llito {
     display: grid;
     gap: 0.9rem;

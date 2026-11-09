@@ -37,7 +37,7 @@ const MENSAJES: Record<string, string> = { borrada: "Receta borrada." };
       <h1 style="color: var(--hijos);">Recetario</h1>
       <a href="/hijos/recetas/nueva" class="btn btn-primary"><span aria-hidden="true">＋</span> Nueva receta</a>
     </div>
-    <p class="text-muted">Las recetas de la familia. Llito, el asistente, también guarda aquí las que te propone.</p>
+    <p class="text-muted">Las recetas de la familia. Kissbell, el asistente, también guarda aquí las que te propone.</p>
   </header>
 
   {ok && MENSAJES[ok] && <div class="alert alert-ok" role="status"><p>{MENSAJES[ok]}</p></div>}
@@ -48,12 +48,12 @@ const MENSAJES: Record<string, string> = { borrada: "Receta borrada." };
         <span class="vacio-icono" aria-hidden="true">🥣</span>
         <div class="grid gap-1">
           <h2>Todavía no hay recetas</h2>
-          <p class="text-muted">Apunta las que ya hacéis o pídele una a Llito y se guardará aquí sola.</p>
+          <p class="text-muted">Apunta las que ya hacéis o pídele una a Kissbell y se guardará aquí sola.</p>
         </div>
         <div class="flex flex-wrap gap-3">
           <a href="/hijos/recetas/nueva" class="btn btn-primary">Añadir una receta</a>
           <a href="/asistente?q=Dame%20una%20receta%20de%20pur%C3%A9%20de%20calabaza%20y%20zanahoria" class="btn btn-secondary">
-            <span aria-hidden="true">✨</span> Pedírsela a Llito
+            <span aria-hidden="true">✨</span> Pedírsela a Kissbell
           </a>
         </div>
       </div>
@@ -105,7 +105,7 @@ const MENSAJES: Record<string, string> = { borrada: "Receta borrada." };
                       {(meta.length > 0 || r.origen === "asistente") && (
                         <span class="flex flex-wrap gap-2">
                           {meta.map((m) => <span class="chip">{m}</span>)}
-                          {r.origen === "asistente" && <span class="chip chip-llito"><span aria-hidden="true">✨</span> De Llito</span>}
+                          {r.origen === "asistente" && <span class="chip chip-llito"><span aria-hidden="true">✨</span> De Kissbell</span>}
                         </span>
                       )}
                     </span>

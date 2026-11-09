@@ -1,0 +1,236 @@
+---
+import App from "@/layouts/App.astro";
+import { and, eq, isNotNull, isNull } from "drizzle-orm";
+import { db } from "@/db/client";
+import { productoCompra, type ProductoCompra } from "@/db/schema";
+import { normalizar } from "@/lib/alimentos";
+import { miembrosDe } from "@/lib/familia";
+import { fechaLarga, fechaMadrid, nombreDia, sumarDias } from "@/lib/fechas";
+import { campo, formatoInstante, listaCompra } from "@/lib/hogar";
+
+const usuario = Astro.locals.user!;
+const hogar = Astro.locals.hogar!;
+let error = "";
+
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  const accion = String(form.get("accion") ?? "");
+  const id = String(form.get("id") ?? "");
+  const ahora = new Date();
+  const delHogar = (extra = eq(productoCompra.id, id)) => and(eq(productoCompra.hogarId, hogar.id), extra);
+
+  if (accion === "anadir") {
+    const texto = campo(form, "nombre", 300);
+    const cantidad = campo(form, "cantidad", 40);
+    if (!texto) {
+      error = "Escribe qué falta.";
+    } else {
+      // «aceite, sal y leche» → tres productos
+      const nombres = texto
+        .split(/\s*(?:,|;|\sy\s|\n)\s*/i)
+        .map((n) => n.trim())
+        .filter(Boolean)
+        .map((n) => n.charAt(0).toUpperCase() + n.slice(1, 80));
+      const yaEstan = new Set(
+        (await db.select({ nombre: productoCompra.nombre }).from(productoCompra).where(delHogar(isNull(productoCompra.compradoEn)))).map((p) =>
+          normalizar(p.nombre),
+        ),
+      );
+      const nuevos = [...new Map(nombres.map((n) => [normalizar(n), n])).entries()].filter(([k]) => !yaEstan.has(k));
+      if (nuevos.length) {
+        await db.insert(productoCompra).values(
+          nuevos.map(([, nombre]) => ({
+            hogarId: hogar.id,
+            nombre,
+            cantidad: nombres.length === 1 ? cantidad : null,
+            creadoPor: usuario.id,
+            createdAt: ahora,
+            updatedAt: ahora,
+          })),
+        );
+      }
+      const ok = nuevos.length ? "anadido" : "repetido";
+      return Astro.redirect(`/hogar/compra?ok=${ok}`, 303);
+    }
+  } else if (accion === "comprar") {
+    await db.update(productoCompra).set({ compradoEn: ahora, compradoPor: usuario.id, updatedAt: ahora }).where(delHogar());
+    return Astro.redirect("/hogar/compra#lista", 303);
+  } else if (accion === "devolver") {
+    await db.update(productoCompra).set({ compradoEn: null, compradoPor: null, createdAt: ahora, updatedAt: ahora }).where(delHogar());
+    return Astro.redirect("/hogar/compra?ok=devuelto#lista", 303);
+  } else if (accion === "borrar") {
+    await db.delete(productoCompra).where(delHogar());
+    return Astro.redirect("/hogar/compra#lista", 303);
+  } else if (accion === "limpiar") {
+    await db.delete(productoCompra).where(delHogar(isNotNull(productoCompra.compradoEn)));
+    return Astro.redirect("/hogar/compra?ok=limpio", 303);
+  } else if (accion === "todo-comprado") {
+    await db.update(productoCompra).set({ compradoEn: ahora, compradoPor: usuario.id, updatedAt: ahora }).where(delHogar(isNull(productoCompra.compradoEn)));
+    return Astro.redirect("/hogar/compra?ok=todo", 303);
+  }
+}
+
+const [{ pendientes, comprados, ultimaActualizacion }, miembros] = await Promise.all([listaCompra(hogar.id), miembrosDe(hogar.id)]);
+const quien = new Map(miembros.map((m) => [m.id, m]));
+const hoy = fechaMadrid();
+
+// Pendientes agrupados por el día en que se apuntaron
+const porDia = new Map<string, ProductoCompra[]>();
+for (const p of pendientes) {
+  const dia = fechaMadrid(p.createdAt);
+  porDia.set(dia, [...(porDia.get(dia) ?? []), p]);
+}
+
+const MENSAJES: Record<string, string> = {
+  anadido: "Apuntado en la lista.",
+  repetido: "Eso ya estaba en la lista.",
+  devuelto: "Vuelve a estar en la lista.",
+  limpio: "Historial borrado.",
+  todo: "¡Compra hecha! Todo marcado como comprado.",
+};
+const ok = MENSAJES[Astro.url.searchParams.get("ok") ?? ""];
+const cuando = (dia: string) => (dia === hoy ? "hoy" : dia === sumarDias(hoy, -1) ? "ayer" : `el ${fechaLarga(dia)}`);
+const persona = (id: string | null) => (id ? quien.get(id) : undefined);
+---
+
+<App title="Lista de la compra">
+  <header class="grid gap-2">
+    <a href="/hogar" class="btn btn-ghost volver"><span aria-hidden="true">←</span> Hogar</a>
+    <h1 style="color: var(--hogar);">Lista de la compra</h1>
+    <p class="text-muted">
+      {
+        ultimaActualizacion ? (
+          <>Última actualización: <strong class="text-ink">{formatoInstante(ultimaActualizacion)}</strong></>
+        ) : (
+          "Todavía no habéis apuntado nada."
+        )
+      }
+    </p>
+  </header>
+
+  {ok && <div class="alert alert-ok" role="status"><p>{ok}</p></div>}
+
+  <form method="post" class="form-alta" novalidate>
+    <input type="hidden" name="accion" value="anadir" />
+    <div class="form-alta-linea con-extra">
+      <div class="field">
+        <label class="label" for="nombre">¿Qué falta?</label>
+        <input
+          class="input"
+          id="nombre"
+          name="nombre"
+          required
+          maxlength="300"
+          autocomplete="off"
+          enterkeyhint="done"
+          placeholder="Aceite, sal y leche"
+          aria-describedby={error ? "nombre-error nombre-ayuda" : "nombre-ayuda"}
+          aria-invalid={error ? "true" : undefined}
+          autofocus={error ? true : undefined}
+        />
+      </div>
+      <div class="field cantidad">
+        <label class="label" for="cantidad">Cantidad <span class="hint">(opcional)</span></label>
+        <input class="input" id="cantidad" name="cantidad" maxlength="40" autocomplete="off" placeholder="2 botellas" />
+      </div>
+      <button class="btn btn-primary" type="submit"><span aria-hidden="true">＋</span> Añadir</button>
+    </div>
+    {error && <p class="field-error" id="nombre-error">{error}</p>}
+    <p class="hint" id="nombre-ayuda">Separa con comas para apuntar varias cosas a la vez.</p>
+  </form>
+
+  <section id="lista" class="grid gap-4" aria-labelledby="titulo-lista">
+    <div class="flex items-center justify-between gap-2 flex-wrap">
+      <h2 id="titulo-lista">Falta {pendientes.length > 0 && <span class="chip num">{pendientes.length}</span>}</h2>
+      {
+        pendientes.length > 1 && (
+          <form method="post">
+            <input type="hidden" name="accion" value="todo-comprado" />
+            <button class="btn btn-ghost" type="submit">Marcar todo como comprado</button>
+          </form>
+        )
+      }
+    </div>
+
+    {
+      pendientes.length === 0 ? (
+        <div class="card vacio-lista">
+          <span class="emoji" aria-hidden="true">🧺</span>
+          <p>No falta nada. Cuando se acabe algo, apúntalo arriba.</p>
+        </div>
+      ) : (
+        [...porDia.entries()].map(([dia, productos]) => (
+          <div class="grupo-dia">
+            <h3>Apuntado {cuando(dia)}</h3>
+            <ul class="lista">
+              {productos.map((p) => {
+                const autor = persona(p.creadoPor);
+                return (
+                  <li class="fila">
+                    <form method="post">
+                      <input type="hidden" name="accion" value="comprar" />
+                      <input type="hidden" name="id" value={p.id} />
+                      <button class="marcar" type="submit" aria-pressed="false" aria-label={`Marcar ${p.nombre} como comprado`}>
+                        <span />
+                      </button>
+                    </form>
+                    <div class="fila-texto">
+                      <span class="fila-titulo">{p.nombre}</span>
+                      {(p.cantidad || (autor && miembros.length > 1)) && (
+                        <span class="fila-detalle">{[p.cantidad, autor && miembros.length > 1 && `${autor.avatar} ${autor.nombre}`].filter(Boolean).join(" · ")}</span>
+                      )}
+                    </div>
+                    <form method="post">
+                      <input type="hidden" name="accion" value="borrar" />
+                      <input type="hidden" name="id" value={p.id} />
+                      <button class="icono-btn peligro" type="submit" aria-label={`Quitar ${p.nombre} de la lista`}>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+                      </button>
+                    </form>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))
+      )
+    }
+  </section>
+
+  {
+    comprados.length > 0 && (
+      <details class="historial">
+        <summary>
+          <span aria-hidden="true">✅</span> Comprado hace poco <span class="chip num ml-auto">{comprados.length}</span>
+        </summary>
+        <ul class="lista">
+          {comprados.map((p) => (
+            <li class="fila" data-hecha>
+              <span class="marcar hecho" aria-hidden="true"><span>✓</span></span>
+              <div class="fila-texto">
+                <span class="fila-titulo">{p.nombre}</span>
+                <span class="fila-detalle">
+                  {p.compradoEn && nombreDia(fechaMadrid(p.compradoEn), hoy)}
+                  {persona(p.compradoPor) && miembros.length > 1 && ` · ${persona(p.compradoPor)!.avatar} ${persona(p.compradoPor)!.nombre}`}
+                </span>
+              </div>
+              <form method="post">
+                <input type="hidden" name="accion" value="devolver" />
+                <input type="hidden" name="id" value={p.id} />
+                <button class="btn btn-ghost" type="submit" aria-label={`Volver a apuntar ${p.nombre}`}>
+                  <span aria-hidden="true">↺</span> Otra vez
+                </button>
+              </form>
+            </li>
+          ))}
+        </ul>
+        <form method="post" class="mt-3">
+          <input type="hidden" name="accion" value="limpiar" />
+          <button class="btn btn-ghost" type="submit" style="color: var(--danger);">Borrar historial</button>
+        </form>
+        <p class="hint mt-2">Lo comprado se guarda 30 días para volver a apuntarlo con un toque.</p>
+      </details>
+    )
+  }
+</App>
+
