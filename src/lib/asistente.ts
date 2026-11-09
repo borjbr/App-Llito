@@ -111,7 +111,9 @@ const esquemaReceta = z.object({
   ingredientes: z
     .array(
       z.object({
-        categoria: z.enum(CATEGORIAS_ALIMENTO).describe("Tipo de alimento"),
+        // Texto libre: si el modelo se inventa una categoría («agua»), la validación la pasa a «otro»
+        // en vez de rechazar toda la respuesta
+        categoria: z.string().describe(`Tipo de alimento: ${CATEGORIAS_ALIMENTO.join(", ")}. Si no encaja, «otro».`),
         producto: z.string().describe("Nombre del ingrediente en singular, por ejemplo «Calabaza»"),
         cantidad: textoOpcional("Por ejemplo «200 g», «1 unidad», «1 cucharada»"),
       }),
