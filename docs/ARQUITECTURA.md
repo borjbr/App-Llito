@@ -87,11 +87,12 @@ docs/                este documento
 
 ### Hogar
 
-- `/hogar` es el menú de la sección: Agenda, Lista de la compra, María Eugenia (limpieza) y Pelis y series, cada una con su dato resumido.
+- `/hogar` es el menú de la sección: Agenda, Lista de la compra, María Eugenia (limpieza), Pelis y series y Restaurantes, cada una con su dato resumido.
 - **Patrón común**: lo hecho no se borra al momento, se marca con fecha (`comprado_en`, `vista_en`). Desaparece de la lista principal, queda en un historial plegable desde el que se puede deshacer, y así hay registro de cuándo cambió la lista.
 - Tabla `producto_compra`: nombre, cantidad, quién lo apuntó y quién lo compró. «Aceite, sal y leche» se apunta como tres productos y no se duplican los pendientes. La «última actualización» es el `updated_at` más reciente; los pendientes se agrupan por el día en que se apuntaron. Lo comprado se borra solo a los 30 días.
 - Tabla `jornada_limpieza`: día, minutos trabajados, precio por hora en céntimos (se guarda en cada día por si cambia la tarifa; 10 € por defecto, en `LIMPIEZA` de `src/lib/hogar.ts`), notas y `pagado`. Se agrupa por semanas de lunes a domingo con su total, y cada semana se marca como pagada de una vez.
 - Tabla `titulo`: película o serie, plataforma y `vista_en`, con filtro por tipo.
+- Tabla `restaurante`: nombre, dirección (con enlace a Google Maps), tipo de comida, notas y `visitado_en`. Se edita en la propia lista (`?editar=id` abre la fila como formulario, sin JavaScript).
 - Kissbell puede leer y apuntar en la lista de la compra (`ver_lista_compra`, `anadir_a_la_compra`).
 
 ### Inicio

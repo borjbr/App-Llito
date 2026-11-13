@@ -374,7 +374,30 @@ export const titulo = sqliteTable(
   (t) => [index("titulo_hogar_idx").on(t.hogarId, t.vistaEn)],
 );
 
+/** Restaurante al que os apetece ir. Al visitarlo se marca con `visitadoEn`. */
+export const restaurante = sqliteTable(
+  "restaurante",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    hogarId: text("hogar_id")
+      .notNull()
+      .references(() => hogar.id, { onDelete: "cascade" }),
+    nombre: text("nombre").notNull(),
+    direccion: text("direccion"),
+    /** Italiana, japonesa, tapas… */
+    tipoComida: text("tipo_comida"),
+    notas: text("notas"),
+    creadoPor: text("creado_por").references(() => user.id, { onDelete: "set null" }),
+    visitadoEn: integer("visitado_en", { mode: "timestamp_ms" }),
+    ...timestamps,
+  },
+  (t) => [index("restaurante_hogar_idx").on(t.hogarId, t.visitadoEn)],
+);
+
 export type ProductoCompra = typeof productoCompra.$inferSelect;
+export type Restaurante = typeof restaurante.$inferSelect;
 export type JornadaLimpieza = typeof jornadaLimpieza.$inferSelect;
 export type Titulo = typeof titulo.$inferSelect;
 export type TipoTitulo = (typeof TIPOS_TITULO)[number];

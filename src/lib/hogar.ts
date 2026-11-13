@@ -5,7 +5,7 @@
  */
 import { and, desc, eq, gte, isNotNull, isNull, lt, max } from "drizzle-orm";
 import { db } from "@/db/client";
-import { jornadaLimpieza, productoCompra, titulo, type JornadaLimpieza } from "@/db/schema";
+import { jornadaLimpieza, productoCompra, restaurante, titulo, type JornadaLimpieza } from "@/db/schema";
 import { diaSemana, fechaMadrid, sumarDias } from "./fechas";
 
 /** Persona que limpia y su precio por hora por defecto */
@@ -110,6 +110,25 @@ export async function listaTitulos(hogarId: string) {
       .limit(30),
   ]);
   return { pendientes, vistos };
+}
+
+/* ── Restaurantes ─────────────────────────────────────────────────────── */
+
+export async function listaRestaurantes(hogarId: string) {
+  const [pendientes, visitados] = await Promise.all([
+    db
+      .select()
+      .from(restaurante)
+      .where(and(eq(restaurante.hogarId, hogarId), isNull(restaurante.visitadoEn)))
+      .orderBy(desc(restaurante.createdAt)),
+    db
+      .select()
+      .from(restaurante)
+      .where(and(eq(restaurante.hogarId, hogarId), isNotNull(restaurante.visitadoEn)))
+      .orderBy(desc(restaurante.visitadoEn))
+      .limit(30),
+  ]);
+  return { pendientes, visitados };
 }
 
 /* ── Limpieza ─────────────────────────────────────────────────────────── */

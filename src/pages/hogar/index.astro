@@ -2,7 +2,7 @@
 import App from "@/layouts/App.astro";
 import { and, count, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
-import { productoCompra, titulo } from "@/db/schema";
+import { productoCompra, restaurante, titulo } from "@/db/schema";
 import { eventosEnRango } from "@/lib/eventos";
 import { fechaMadrid, sumarDias } from "@/lib/fechas";
 import { formatoEuros, LIMPIEZA, pendienteLimpieza } from "@/lib/hogar";
@@ -10,10 +10,11 @@ import { formatoEuros, LIMPIEZA, pendienteLimpieza } from "@/lib/hogar";
 const hogar = Astro.locals.hogar!;
 const hoy = fechaMadrid();
 
-const [semana, [compra], [pelis], limpieza] = await Promise.all([
+const [semana, [compra], [pelis], [restaurantes], limpieza] = await Promise.all([
   eventosEnRango(hogar.id, hoy, sumarDias(hoy, 7)),
   db.select({ n: count() }).from(productoCompra).where(and(eq(productoCompra.hogarId, hogar.id), isNull(productoCompra.compradoEn))),
   db.select({ n: count() }).from(titulo).where(and(eq(titulo.hogarId, hogar.id), isNull(titulo.vistaEn))),
+  db.select({ n: count() }).from(restaurante).where(and(eq(restaurante.hogarId, hogar.id), isNull(restaurante.visitadoEn))),
   pendienteLimpieza(hogar.id),
 ]);
 const proximos = semana.filter((e) => !(e.tipo === "tarea" && e.completado)).length;
@@ -47,6 +48,13 @@ const secciones = [
     titulo: "Pelis y series",
     texto: "Lo que queréis ver. Al verlo, se tacha.",
     dato: pelis.n ? plural(pelis.n, "pendiente", "pendientes") : "Nada pendiente",
+  },
+  {
+    href: "/hogar/restaurantes",
+    icono: "🍽️",
+    titulo: "Restaurantes",
+    texto: "Sitios a los que queréis ir. Al ir, se tacha.",
+    dato: restaurantes.n ? plural(restaurantes.n, "pendiente", "pendientes") : "Nada pendiente",
   },
 ];
 ---
