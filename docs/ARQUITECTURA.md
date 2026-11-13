@@ -97,8 +97,18 @@ docs/                este documento
 
 ### Inicio
 
+- Orden: cabecera con fecha y tiempo de hoy (Open-Meteo, gratis, desde el navegador con la ubicación del usuario o Madrid; `src/scripts/tiempo.ts`), aviso de hoy/mañana, previsión de la agenda a 10 días agrupada por día, Kissbell y las secciones.
 - Aviso destacado con lo que queda de hoy y lo de mañana (de la agenda). Se puede cerrar; vuelve a salir si cambia lo que hay apuntado (la clave se guarda en `localStorage`).
 - Dos columnas a partir de 1024 px; menú inferior en el móvil y superior desde 768 px.
+
+### Voz
+
+- `src/scripts/voz.ts`: dictado con la Web Speech API del navegador (Chrome, Edge, Safari). Al terminar la frase se envía solo. Donde no existe, el botón se oculta. Sin servidor ni coste.
+
+### Versiones
+
+- La versión sale de `package.json` (`src/lib/version.ts`) y se enseña en Inicio, Mi perfil y `/novedades`, que lee `CHANGELOG.md`.
+- Al publicar: `npm version minor` (o `patch`), añadir la entrada en `CHANGELOG.md` con la misma versión y fecha, y hacer el PR.
 
 ## Próximos pasos
 

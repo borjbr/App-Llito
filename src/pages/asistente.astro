@@ -135,6 +135,9 @@ const ok = Astro.url.searchParams.get("ok");
           <form class="composer" data-composer>
             <label for="mensaje" class="sr-only">Escribe a Kissbell</label>
             <textarea id="mensaje" data-campo rows="1" maxlength={MAX_MENSAJE} placeholder="Pregúntale lo que quieras…" enterkeyhint="send" autocomplete="off" />
+            <button class="composer-voz" type="button" data-voz aria-label="Dictar por voz" aria-pressed="false" title="Dictar por voz">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6" /></svg>
+            </button>
             <button class="composer-enviar" type="submit" data-enviar aria-label="Enviar" disabled>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
             </button>
@@ -298,6 +301,36 @@ const ok = Astro.url.searchParams.get("ok");
   .composer-enviar:active { transform: scale(0.94); }
   .composer-enviar:disabled { opacity: 0.35; cursor: not-allowed; }
   .composer-enviar svg { width: 1.3rem; height: 1.3rem; }
+  :global(.voz-aviso) { margin: 0.5rem 1rem 0; font-size: 0.9rem; color: var(--danger); }
+  .composer-voz {
+    display: grid;
+    place-items: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: 999px;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    position: relative;
+  }
+  .composer-voz:hover { background: var(--surface-2); color: var(--ink); }
+  .composer-voz[hidden] { display: none; }
+  .composer-voz svg { width: 1.35rem; height: 1.35rem; }
+  .composer-voz.escuchando { background: var(--danger); color: #fff; }
+  .composer-voz.escuchando::before {
+    content: "";
+    position: absolute;
+    inset: -4px;
+    border-radius: 999px;
+    border: 2px solid var(--danger);
+    animation: pulso 1.2s ease-out infinite;
+  }
+  @keyframes pulso {
+    from { transform: scale(0.9); opacity: 0.8; }
+    to { transform: scale(1.35); opacity: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) { .composer-voz.escuchando::before { animation: none; } }
   .composer-aviso { text-align: center; font-size: 0.8rem; }
 
   /* Mensajes (los crea el JavaScript, por eso van como globales dentro de .chat) */

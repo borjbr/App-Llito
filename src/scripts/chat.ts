@@ -1,3 +1,4 @@
+import { activarVoz } from "./voz";
 /**
  * Cliente del chat de Kissbell: envía el mensaje, lee el stream del AI SDK y
  * pinta texto y tarjetas de receta a medida que llegan.
@@ -300,6 +301,30 @@ export function iniciarChat(raiz: HTMLElement) {
     e.preventDefault();
     enviar(campo.value);
   });
+  // Dictado por voz: al terminar de hablar se envía solo
+  const vozBtn = raiz.querySelector<HTMLButtonElement>("[data-voz]");
+  if (vozBtn) {
+    activarVoz(vozBtn, {
+      alParcial: (t) => {
+        campo!.value = t;
+        ajustarAltura();
+      },
+      alTexto: (t) => enviar(t),
+      alEstado: (e, detalle) => {
+        campo!.placeholder = e === "escuchando" ? "Te escucho…" : "Pregúntale lo que quieras…";
+        if (e === "error" && detalle) {
+          campo!.value = "";
+          anunciar(detalle);
+          // Aviso breve debajo del campo, sin ensuciar la conversación
+          const aviso = h("p", { class: "voz-aviso", role: "alert" }, detalle);
+          form!.insertAdjacentElement("afterend", aviso);
+          setTimeout(() => aviso.remove(), 6000);
+        }
+        if (e !== "escuchando") actualizarBoton();
+      },
+    });
+  }
+
   raiz.addEventListener("click", (e) => {
     const boton = (e.target as HTMLElement).closest<HTMLButtonElement>("[data-sugerencia]");
     if (boton) enviar(boton.dataset.sugerencia ?? boton.textContent ?? "");

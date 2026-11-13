@@ -1,5 +1,6 @@
 ---
 import App from "@/layouts/App.astro";
+import { VERSION } from "@/lib/version";
 import CamposPerfil from "@/components/CamposPerfil.astro";
 import CampoHijos from "@/components/CampoHijos.astro";
 import ResumenErrores from "@/components/ResumenErrores.astro";
@@ -126,6 +127,7 @@ guardado = Astro.url.searchParams.has("guardado") && Astro.request.method === "G
   <form method="post" action="/salir" class="grid">
     <button class="btn btn-danger btn-block" type="submit">Cerrar sesión</button>
   </form>
+  <p class="text-center hint"><a href="/novedades">App-Llito v{VERSION} · Ver novedades</a></p>
 </App>
 
 <script>
