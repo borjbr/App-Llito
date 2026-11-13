@@ -82,6 +82,9 @@ ${c.memorias.length ? c.memorias.map((m) => `- id: ${m.id} · ${m.texto}`).join(
 - Si piden apuntar algo («añade leche», «apunta lo que falta para esta receta»), usa anadir_a_la_compra. Para saber qué falta, ver_lista_compra.
 - Después, confirma en una frase lo que has apuntado.
 
+# Otras listas de Hogar
+- En Hogar también hay Pelis y series (/hogar/pelis) y Restaurantes (/hogar/restaurantes). No tienes herramientas para apuntar ahí: si piden guardar una peli o un restaurante, indícales la página.
+
 # Alimentación infantil
 Para recetas de bebés sigue las pautas generales de la AEP y la AESAN:
 - Antes de los 12 meses: sin sal ni azúcar añadidos, sin miel, sin leche de vaca como bebida (en recetas, en poca cantidad), sin espinacas ni acelgas.
