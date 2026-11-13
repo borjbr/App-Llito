@@ -1,9 +1,9 @@
 ---
 import App from "@/layouts/App.astro";
-import ItemEvento from "@/components/ItemEvento.astro";
 import { hijosDe, listaNombres, miembrosDe } from "@/lib/familia";
 import { eventosEnRango, textoHora, TIPOS } from "@/lib/eventos";
 import { fechaMadrid, horaMadrid, nombreDia, sumarDias } from "@/lib/fechas";
+import { VERSION } from "@/lib/version";
 import { db } from "@/db/client";
 import { mensajeChat } from "@/db/schema";
 import { and, desc, eq } from "drizzle-orm";
@@ -14,7 +14,7 @@ const hoyMadrid = fechaMadrid();
 const [hijos, miembros, semana, ultimaPregunta] = await Promise.all([
   hijosDe(hogar.id),
   miembrosDe(hogar.id),
-  eventosEnRango(hogar.id, hoyMadrid, sumarDias(hoyMadrid, 7)),
+  eventosEnRango(hogar.id, hoyMadrid, sumarDias(hoyMadrid, 10)),
   db
     .select({ partes: mensajeChat.partes })
     .from(mensajeChat)
@@ -23,7 +23,18 @@ const [hijos, miembros, semana, ultimaPregunta] = await Promise.all([
     .get(),
 ]);
 const pendientesSemana = semana.filter((e) => !(e.tipo === "tarea" && e.completado));
-const proximos = pendientesSemana.slice(0, 4);
+// Previsión a 10 días, agrupada por día
+const porDia = new Map<string, typeof pendientesSemana>();
+for (const e of pendientesSemana) porDia.set(e.dia, [...(porDia.get(e.dia) ?? []), e]);
+const diasPrevision = [...porDia.entries()];
+const fmtDiaCorto = new Intl.DateTimeFormat("es-ES", { weekday: "short", timeZone: "UTC" });
+const fmtDiaNum = new Intl.DateTimeFormat("es-ES", { day: "numeric", month: "short", timeZone: "UTC" });
+const etiquetaDia = (dia: string) => {
+  const d = new Date(`${dia}T12:00:00Z`);
+  const rel = nombreDia(dia, hoyMadrid);
+  const corto = fmtDiaCorto.format(d).replace(".", "");
+  return { rel: rel.charAt(0).toUpperCase() + rel.slice(1), corto: corto.charAt(0).toUpperCase() + corto.slice(1), num: fmtDiaNum.format(d).replace(".", "") };
+};
 
 // Aviso: lo que queda de hoy y lo de mañana
 const manana = sumarDias(hoyMadrid, 1);
@@ -42,7 +53,6 @@ const tituloAviso =
 // Clave del aviso: si cambia lo que hay, vuelve a aparecer aunque se hubiera cerrado
 const claveAviso = `${hoyMadrid}:${avisos.map((e) => `${e.id}@${e.dia}`).join(",")}`;
 const mapaHijos = new Map(hijos.map((h) => [h.id, h.nombre]));
-const mapaMiembros = new Map(miembros.map((m) => [m.id, { nombre: m.nombre, avatar: m.avatar }]));
 const nombres = hijos.map((h) => h.nombre);
 const bienvenida = Astro.url.searchParams.get("bienvenida");
 
@@ -86,14 +96,17 @@ const textoHijos =
 
   <div class="inicio">
   <div class="inicio-col">
-  <header class="flex items-center gap-4">
-    <span class="grid place-items-center size-16 shrink-0 rounded-full text-4xl" style="background: var(--surface-2);" aria-hidden="true">
-      {user.avatar}
-    </span>
-    <div class="min-w-0">
-      <p class="text-muted first-letter:uppercase">{fecha}</p>
-      <h1>{saludo}, {user.name}</h1>
+  <header class="grid gap-3">
+    <div class="flex items-center gap-4">
+      <span class="grid place-items-center size-16 shrink-0 rounded-full text-4xl" style="background: var(--surface-2);" aria-hidden="true">
+        {user.avatar}
+      </span>
+      <div class="min-w-0">
+        <p class="text-muted first-letter:uppercase">{fecha}</p>
+        <h1>{saludo}, {user.name}</h1>
+      </div>
     </div>
+    <span class="tiempo" data-tiempo hidden role="img" aria-label="Tiempo de hoy"></span>
   </header>
 
 
@@ -143,6 +156,51 @@ const textoHijos =
     })();
   </script>
 
+  <section aria-labelledby="sec-proximo" class="grid gap-3">
+    <div class="flex items-baseline justify-between gap-2">
+      <h2 id="sec-proximo">Próximos 10 días</h2>
+      <a href="/agenda" class="font-bold">Ver agenda</a>
+    </div>
+    {
+      diasPrevision.length > 0 ? (
+        <ol class="prevision">
+          {diasPrevision.map(([dia, eventos]) => {
+            const et = etiquetaDia(dia);
+            const esHoy = dia === hoyMadrid;
+            return (
+              <li class="prevision-dia" data-hoy={esHoy ? "si" : undefined}>
+                <a href={`/agenda?dia=${dia}`} class="prevision-fecha" aria-label={`${et.rel}, ${et.num}`}>
+                  <span class="prevision-rel">{dia === hoyMadrid || dia === sumarDias(hoyMadrid, 1) ? et.rel : et.corto}</span>
+                  <span class="prevision-num">{et.num}</span>
+                </a>
+                <ul class="prevision-lista">
+                  {eventos.map((e) => (
+                    <li>
+                      <a href={`/agenda/${e.id}`} class="prevision-evento" style={`--c: ${TIPOS[e.tipo].color}`}>
+                        <span class="prevision-hora">{e.todoElDia ? "Todo el día" : textoHora(e)}</span>
+                        <span class="prevision-titulo">
+                          <span aria-hidden="true">{TIPOS[e.tipo].emoji} </span>
+                          {e.titulo}
+                          {e.hijoId && mapaHijos.get(e.hijoId) && <span class="prevision-quien"> · {mapaHijos.get(e.hijoId)}</span>}
+                        </span>
+                        {e.ubicacion && <span class="prevision-donde">{e.ubicacion}</span>}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            );
+          })}
+        </ol>
+      ) : (
+        <div class="card grid gap-3 justify-items-start">
+          <p class="text-muted">Nada apuntado para los próximos 10 días.</p>
+          <a href="/agenda/nuevo" class="btn btn-secondary">Añadir una cita o tarea</a>
+        </div>
+      )
+    }
+  </section>
+
   <section class="llito" aria-labelledby="sec-llito">
     <div class="llito-cabecera">
       <span class="llito-icono" aria-hidden="true">✨</span>
@@ -151,7 +209,7 @@ const textoHijos =
         <p class="llito-sub">Recetas, ideas y dudas del día a día. Lo que guarda, lo recuerda.</p>
       </div>
     </div>
-    <form action="/asistente" method="get" class="llito-form">
+    <form action="/asistente" method="get" class="llito-form" data-llito-form>
       <label for="llito-q" class="sr-only">Pregunta para Kissbell</label>
       <input
         id="llito-q"
@@ -163,6 +221,9 @@ const textoHijos =
         autocomplete="off"
         enterkeyhint="send"
       />
+      <button class="llito-voz" type="button" data-voz aria-label="Dictar por voz" aria-pressed="false" title="Dictar por voz">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6" /></svg>
+      </button>
       <button class="llito-enviar" type="submit" aria-label="Preguntar a Kissbell">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
       </button>
@@ -194,27 +255,6 @@ const textoHijos =
 
   </div>
   <div class="inicio-col">
-  <section aria-labelledby="sec-proximo" class="grid gap-3">
-    <div class="flex items-baseline justify-between gap-2">
-      <h2 id="sec-proximo">Próximos días</h2>
-      <a href="/agenda" class="font-bold">Ver agenda</a>
-    </div>
-    {
-      proximos.length > 0 ? (
-        <ul class="grid gap-2 list-none p-0 m-0">
-          {proximos.map((e) => (
-            <ItemEvento evento={e} hijos={mapaHijos} miembros={mapaMiembros} volver="/" mostrarDia={nombreDia(e.dia, hoyMadrid)} />
-          ))}
-        </ul>
-      ) : (
-        <div class="card grid gap-3 justify-items-start">
-          <p class="text-muted">No hay nada apuntado para esta semana.</p>
-          <a href="/agenda/nuevo" class="btn btn-secondary">Añadir una cita o tarea</a>
-        </div>
-      )
-    }
-  </section>
-
   <section aria-labelledby="sec-secciones" class="grid gap-4">
     <h2 id="sec-secciones" class="sr-only">Secciones</h2>
     <ul class="secciones-grid">
@@ -242,7 +282,36 @@ const textoHijos =
   </section>
   </div>
   </div>
+  <p class="version"><a href="/novedades">App-Llito v{VERSION} · Novedades</a></p>
 </App>
+
+<script>
+  import { mostrarTiempo } from "@/scripts/tiempo";
+  import { activarVoz } from "@/scripts/voz";
+  const tiempo = document.querySelector<HTMLElement>("[data-tiempo]");
+  if (tiempo) mostrarTiempo(tiempo);
+  const form = document.querySelector<HTMLFormElement>("[data-llito-form]");
+  const campo = form?.querySelector<HTMLInputElement>("input[name=q]");
+  const voz = form?.querySelector<HTMLButtonElement>("[data-voz]");
+  if (form && campo && voz) {
+    const placeholder = campo.placeholder;
+    activarVoz(voz, {
+      alParcial: (t) => (campo.value = t),
+      alTexto: (t) => {
+        campo.value = t;
+        form.submit();
+      },
+      alEstado: (e, detalle) => {
+        campo.placeholder = e === "escuchando" ? "Te escucho…" : placeholder;
+        if (e === "error" && detalle) {
+          campo.value = "";
+          campo.placeholder = detalle;
+          setTimeout(() => (campo.placeholder = placeholder), 5000);
+        }
+      },
+    });
+  }
+</script>
 
 <style>
   .inicio { display: grid; gap: 1.5rem; }
@@ -338,9 +407,9 @@ const textoHijos =
   .llito-sub { color: var(--muted); font-size: 0.92rem; }
   .llito-form {
     display: grid;
-    grid-template-columns: 1fr auto;
+    grid-template-columns: 1fr auto auto;
     align-items: center;
-    gap: 0.4rem;
+    gap: 0.25rem;
     padding: 0.3rem 0.3rem 0.3rem 1rem;
     border-radius: 999px;
     background: var(--surface);
@@ -368,6 +437,104 @@ const textoHijos =
     cursor: pointer;
   }
   .llito-enviar svg { width: 1.3rem; height: 1.3rem; }
+  .llito-voz {
+    display: grid;
+    place-items: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: 999px;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    position: relative;
+  }
+  .llito-voz:hover { background: var(--surface-2); color: var(--ink); }
+  .llito-voz[hidden] { display: none; }
+  .llito-voz svg { width: 1.35rem; height: 1.35rem; }
+  .llito-voz.escuchando { background: var(--danger); color: #fff; }
+  .llito-voz.escuchando::before {
+    content: "";
+    position: absolute;
+    inset: -4px;
+    border-radius: 999px;
+    border: 2px solid var(--danger);
+    animation: pulso 1.2s ease-out infinite;
+  }
+  @keyframes pulso {
+    from { transform: scale(0.9); opacity: 0.8; }
+    to { transform: scale(1.35); opacity: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) { .llito-voz.escuchando::before { animation: none; } }
+
+  /* Tiempo en la cabecera */
+  .tiempo {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.75rem 0.4rem 0.5rem;
+    border-radius: 999px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    color: var(--ink);
+    text-decoration: none;
+    white-space: nowrap;
+    justify-self: start;
+  }
+  .tiempo[hidden] { display: none; }
+  .tiempo-icono { font-size: 1.6rem; line-height: 1; }
+  .tiempo-datos { display: flex; align-items: baseline; gap: 0.5rem; line-height: 1.15; }
+  .tiempo-datos strong { font-family: var(--font-display); font-size: 1.2rem; }
+  .tiempo-detalle { font-size: 0.85rem; color: var(--muted); }
+
+  /* Previsión a 10 días */
+  .prevision { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.6rem; }
+  .prevision-dia {
+    display: grid;
+    grid-template-columns: 3.4rem 1fr;
+    gap: 0.6rem;
+    align-items: start;
+  }
+  .prevision-fecha {
+    display: grid;
+    justify-items: center;
+    gap: 0.05rem;
+    padding: 0.45rem 0.2rem;
+    border-radius: 14px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    color: var(--muted);
+    text-decoration: none;
+    text-align: center;
+    line-height: 1.1;
+    position: sticky;
+    top: 4.5rem;
+  }
+  .prevision-dia[data-hoy] .prevision-fecha { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .prevision-rel { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; }
+  .prevision-num { font-size: 0.8rem; font-weight: 700; color: var(--ink); white-space: nowrap; }
+  .prevision-dia[data-hoy] .prevision-num { color: inherit; }
+  .prevision-lista { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.4rem; }
+  .prevision-evento {
+    display: grid;
+    gap: 0.1rem;
+    padding: 0.5rem 0.75rem 0.5rem 0.85rem;
+    border-radius: var(--radius);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--c, var(--accent));
+    color: var(--ink);
+    text-decoration: none;
+    min-height: 2.75rem;
+  }
+  .prevision-evento:hover { border-color: var(--c, var(--accent)); }
+  .prevision-hora { font-size: 0.78rem; font-weight: 700; color: var(--c, var(--accent)); font-variant-numeric: tabular-nums; }
+  .prevision-titulo { font-weight: 700; overflow-wrap: anywhere; }
+  .prevision-quien { font-weight: 400; color: var(--muted); }
+  .prevision-donde { font-size: 0.85rem; color: var(--muted); }
+  .version { text-align: center; font-size: 0.8rem; margin-top: 0.5rem; }
+  .version a { color: var(--muted); text-decoration: none; }
+  .version a:hover { text-decoration: underline; }
   .llito-chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.5rem; }
   .llito-chips a {
     display: inline-flex;
