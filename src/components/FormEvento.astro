@@ -83,9 +83,9 @@ const ejemplos: Record<string, string> = {
         </div>
       </div>
 
-      <div class="grid gap-4 grid-cols-2" data-horas hidden={v.todoElDia}>
+      <div class="grid gap-4 grid-cols-2 items-end" data-horas hidden={v.todoElDia}>
         <Campo id="hora_inicio" label="Empieza" type="time" value={v.horaInicio} error={errores.hora_inicio} required={false} />
-        <Campo id="hora_fin" label="Termina (opcional)" type="time" value={v.horaFin} error={errores.hora_fin} required={false} />
+        <Campo id="hora_fin" label="Termina" hint="Opcional" type="time" value={v.horaFin} error={errores.hora_fin} required={false} />
       </div>
 
       <div class="field">

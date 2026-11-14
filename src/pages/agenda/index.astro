@@ -92,7 +92,7 @@ const enlace = (params: Record<string, string | null>) => {
   </a>
 
   <!-- Filtro por tipo -->
-  <nav aria-label="Filtrar por tipo" class="filtros">
+  <nav aria-label="Filtrar por tipo" class="filtros scroll-x">
     <a href={enlace({ tipo: null })} aria-current={!filtro ? "true" : undefined}>Todo</a>
     {ORDEN_TIPOS.map((t) => (
       <a href={enlace({ tipo: t })} aria-current={filtro === t ? "true" : undefined} style={`--c: ${TIPOS[t].color}`}>
@@ -105,7 +105,7 @@ const enlace = (params: Record<string, string | null>) => {
   <section class="card grid gap-3" aria-labelledby="titulo-mes" style="padding: 1rem;">
     <div class="flex items-center justify-between gap-2">
       <a href={enlace({ mes: mesAnterior, dia: `${mesAnterior}-01` })} class="btn btn-ghost" aria-label={`Mes anterior: ${nombreMes(Number(mesAnterior.slice(0, 4)), Number(mesAnterior.slice(5)))}`}>←</a>
-      <h2 id="titulo-mes" class="first-letter:uppercase text-center">{nombreMes(anio, mes)}</h2>
+      <h2 id="titulo-mes" class="first-letter:uppercase text-center titulo-mes">{nombreMes(anio, mes)}</h2>
       <a href={enlace({ mes: mesSiguiente, dia: `${mesSiguiente}-01` })} class="btn btn-ghost" aria-label={`Mes siguiente: ${nombreMes(Number(mesSiguiente.slice(0, 4)), Number(mesSiguiente.slice(5)))}`}>→</a>
     </div>
     <table class="mes">
@@ -209,18 +209,16 @@ const enlace = (params: Record<string, string | null>) => {
   .filtros {
     display: flex;
     gap: 0.5rem;
-    overflow-x: auto;
-    padding-bottom: 0.25rem;
+    padding-block: 2px 0.25rem;
     margin-inline: -4px;
-    padding-inline: 4px;
-    scrollbar-width: thin;
+    padding-inline: 4px 2rem;
   }
   .filtros a {
     flex-shrink: 0;
     display: inline-flex;
     align-items: center;
     gap: 0.3rem;
-    min-height: 40px;
+    min-height: 44px;
     padding: 0.3rem 0.85rem;
     border-radius: 999px;
     border: 2px solid var(--line);
@@ -233,6 +231,7 @@ const enlace = (params: Record<string, string | null>) => {
   }
   .filtros a[aria-current="true"] { border-color: var(--c, var(--accent)); background: var(--surface-2); }
 
+  .titulo-mes { font-size: clamp(1.1rem, 4.6vw, 1.4rem); white-space: nowrap; }
   .mes { width: 100%; border-collapse: collapse; table-layout: fixed; }
   .mes th { font-size: 0.8rem; color: var(--muted); font-weight: 700; padding-bottom: 0.3rem; }
   .mes td { padding: 2px; }

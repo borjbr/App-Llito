@@ -137,7 +137,7 @@ const ok = MENSAJES[Astro.url.searchParams.get("ok") ?? ""];
 
   <section class="grid gap-3" aria-labelledby="titulo-lista">
     <h2 id="titulo-lista">Por ver</h2>
-    <nav class="pestanas" aria-label="Filtrar">
+    <nav class="pestanas scroll-x" aria-label="Filtrar">
       <a href="/hogar/pelis" aria-current={!filtro ? "page" : undefined}>Todo <span class="num">{todos.length}</span></a>
       {
         TIPOS_TITULO.map((t) => (

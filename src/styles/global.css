@@ -106,6 +106,9 @@
   html {
     font-size: 106.25%; /* 17px: lectura cómoda en el móvil */
     -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
   }
   body {
     margin: 0;
@@ -160,12 +163,13 @@
   }
 
   /* Formularios */
-  .field { display: grid; gap: 0.35rem; }
+  .field { display: grid; gap: 0.35rem; min-width: 0; }
   .label { font-weight: 700; font-size: 0.95rem; }
   .hint { color: var(--muted); font-size: 0.88rem; }
   .input {
     min-height: var(--tap);
     width: 100%;
+    min-width: 0;
     box-sizing: border-box;
     padding: 0.65rem 0.9rem;
     font: inherit;
@@ -390,7 +394,8 @@
     padding-top: calc(1.5rem + env(safe-area-inset-top, 0px));
     padding-bottom: calc(6.5rem + env(safe-area-inset-bottom, 0px));
   }
-  .app-contenido { display: grid; gap: 1.5rem; max-width: 42rem; margin-inline: auto; }
+  /* minmax(0, 1fr): sin esto, un texto largo sin saltos (o un input nativo) ensancha toda la página */
+  .app-contenido { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.5rem; max-width: 42rem; margin-inline: auto; }
   @media (min-width: 768px) {
     .app-main { padding-top: 2rem; padding-bottom: 3rem; }
     .app-contenido { max-width: 46rem; gap: 1.75rem; }
@@ -510,7 +515,7 @@
   .historial .fila { border-style: dashed; }
   .vacio-lista { display: grid; justify-items: center; gap: 0.5rem; padding: 2rem 1rem; text-align: center; color: var(--muted); }
   .vacio-lista .emoji { font-size: 2.5rem; }
-  .pestanas { display: flex; gap: 0.5rem; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+  .pestanas { display: flex; gap: 0.5rem; padding-bottom: 2px; padding-right: 2rem; }
   .pestanas a {
     display: inline-flex;
     align-items: center;
@@ -532,4 +537,40 @@
   .resumen-dato.destacado { background: var(--hogar-soft); border-color: transparent; }
   .resumen-dato.destacado strong { color: var(--hogar); }
   .num { font-variant-numeric: tabular-nums; }
+
+  /* ── Móvil: detalles de interacción ─────────────────────────────────── */
+  /* Sin el retardo del doble toque para hacer zoom en botones y enlaces */
+  a, button, summary, label, select, input, textarea { touch-action: manipulation; }
+  /* Los campos de fecha y hora nativos de iOS no encogen ni se alinean solos */
+  input[type="date"].input,
+  input[type="time"].input {
+    -webkit-appearance: none;
+    appearance: none;
+    display: block;
+    text-align: left;
+    line-height: 1.4;
+  }
+  input[type="date"].input::-webkit-date-and-time-value,
+  input[type="time"].input::-webkit-date-and-time-value { text-align: left; }
+  /* Enlaces sueltos («Ver agenda», versión): área de toque cómoda sin cambiar su aspecto */
+  .enlace-tap {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding-inline: 0.25rem;
+    margin-inline: -0.25rem;
+  }
+  /* Desplegables: alto de toque */
+  details > summary { min-height: 44px; }
+  /* Filas de scroll horizontal: indican que hay más a la derecha */
+  .scroll-x {
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+    mask-image: linear-gradient(to right, #000 calc(100% - 2rem), transparent);
+  }
+  .scroll-x::-webkit-scrollbar { display: none; }
+  .scroll-x > * { scroll-snap-align: start; }
 }
