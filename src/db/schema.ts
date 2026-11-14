@@ -193,6 +193,11 @@ export const conexionGoogle = sqliteTable("conexion_google", {
   syncToken: text("sync_token"),
   ultimaSync: integer("ultima_sync", { mode: "timestamp_ms" }),
   ultimoError: text("ultimo_error"),
+  /** Permisos concedidos por Google (separados por espacios) */
+  scopes: text("scopes"),
+  /** Carpeta de Drive elegida para la galería */
+  carpetaDriveId: text("carpeta_drive_id"),
+  carpetaDriveNombre: text("carpeta_drive_nombre"),
   ...timestamps,
 });
 
@@ -440,6 +445,63 @@ export const consulta = sqliteTable(
 );
 
 export type Consulta = typeof consulta.$inferSelect;
+
+/* ── Galería (fotos y vídeos guardados en Google Drive) ──────────────── */
+
+export const TIPOS_MEDIO = ["imagen", "video"] as const;
+
+/** Foto o vídeo de la galería. El archivo vive en Google Drive; aquí solo sus datos. */
+export const medio = sqliteTable(
+  "medio",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    hogarId: text("hogar_id")
+      .notNull()
+      .references(() => hogar.id, { onDelete: "cascade" }),
+    hijoId: text("hijo_id").references(() => hijo.id, { onDelete: "set null" }),
+    driveId: text("drive_id").notNull(),
+    tipo: text("tipo", { enum: TIPOS_MEDIO }).notNull(),
+    mime: text("mime").notNull(),
+    nombre: text("nombre").notNull(),
+    tamano: integer("tamano").notNull(),
+    duracionS: integer("duracion_s"),
+    /** Día en que se hizo (YYYY-MM-DD) */
+    fecha: text("fecha").notNull(),
+    descripcion: text("descripcion"),
+    subidoPor: text("subido_por").references(() => user.id, { onDelete: "set null" }),
+    ...timestamps,
+  },
+  (t) => [index("medio_hogar_idx").on(t.hogarId, t.fecha)],
+);
+
+/**
+ * Subida en curso: la URL de sesión «resumable» de Drive se queda en el servidor
+ * (el navegador solo manda trozos a la app). Se borra al terminar o al día siguiente.
+ */
+export const subida = sqliteTable("subida", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  hogarId: text("hogar_id")
+    .notNull()
+    .references(() => hogar.id, { onDelete: "cascade" }),
+  userId: text("user_id").references(() => user.id, { onDelete: "cascade" }),
+  uri: text("uri").notNull(),
+  tipo: text("tipo", { enum: TIPOS_MEDIO }).notNull(),
+  mime: text("mime").notNull(),
+  nombre: text("nombre").notNull(),
+  tamano: integer("tamano").notNull(),
+  duracionS: integer("duracion_s"),
+  fecha: text("fecha").notNull(),
+  hijoId: text("hijo_id"),
+  descripcion: text("descripcion"),
+  ...timestamps,
+});
+
+export type Medio = typeof medio.$inferSelect;
+export type TipoMedio = (typeof TIPOS_MEDIO)[number];
 export type ProductoCompra = typeof productoCompra.$inferSelect;
 export type Restaurante = typeof restaurante.$inferSelect;
 export type JornadaLimpieza = typeof jornadaLimpieza.$inferSelect;

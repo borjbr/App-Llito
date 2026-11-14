@@ -1,0 +1,166 @@
+---
+import App from "@/layouts/App.astro";
+import { and, desc, eq } from "drizzle-orm";
+import { db } from "@/db/client";
+import { medio } from "@/db/schema";
+import { hijosDe, miembrosDe } from "@/lib/familia";
+import { conexionDe } from "@/lib/google";
+import { actualizarDescripcion, aLaPapelera, tienePermisoDrive } from "@/lib/drive";
+import { formatoDuracion, formatoTamano, medioDelHogar } from "@/lib/galeria";
+import { esFechaValida, fechaLarga, fechaMadrid } from "@/lib/fechas";
+
+const hogar = Astro.locals.hogar!;
+const m = await medioDelHogar(hogar.id, Astro.params.id!);
+if (!m) return Astro.redirect("/galeria", 303);
+const conexion = await conexionDe(hogar.id);
+if (!conexion || !tienePermisoDrive(conexion)) return Astro.redirect("/galeria", 303);
+
+let error = "";
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  const accion = String(form.get("accion") ?? "");
+  if (accion === "borrar") {
+    try {
+      await aLaPapelera(conexion, m.driveId);
+    } catch (e) {
+      // Si ya no estaba en Drive, se quita igualmente de la galería
+      console.error("[galería] papelera", e);
+    }
+    await db.delete(medio).where(and(eq(medio.id, m.id), eq(medio.hogarId, hogar.id)));
+    return Astro.redirect("/galeria?ok=borrado", 303);
+  }
+  if (accion === "guardar") {
+    const descripcion = String(form.get("descripcion") ?? "").trim().slice(0, 300) || null;
+    const fecha = String(form.get("fecha") ?? "");
+    const hijoId = String(form.get("hijo") ?? "") || null;
+    const hijos = await hijosDe(hogar.id);
+    if (!esFechaValida(fecha) || fecha > fechaMadrid()) {
+      error = "Elige un día válido.";
+    } else {
+      await db
+        .update(medio)
+        .set({ descripcion, fecha, hijoId: hijos.some((h) => h.id === hijoId) ? hijoId : null, updatedAt: new Date() })
+        .where(eq(medio.id, m.id));
+      actualizarDescripcion(conexion, m.driveId, descripcion).catch(() => {});
+      return Astro.redirect(`/galeria/${m.id}?ok=guardado`, 303);
+    }
+  }
+}
+
+const [hijos, miembros, orden] = await Promise.all([
+  hijosDe(hogar.id),
+  miembrosDe(hogar.id),
+  // Mismo orden que la galería: de lo más reciente a lo más antiguo
+  db.select({ id: medio.id }).from(medio).where(eq(medio.hogarId, hogar.id)).orderBy(desc(medio.fecha), desc(medio.createdAt)),
+]);
+const pos = orden.findIndex((x) => x.id === m.id);
+const anterior = orden[pos - 1];
+const siguiente = orden[pos + 1];
+const hijo = hijos.find((h) => h.id === m.hijoId);
+const autor = miembros.find((x) => x.id === m.subidoPor);
+const ok = { guardado: "Cambios guardados." }[Astro.url.searchParams.get("ok") ?? ""];
+---
+
+<App title={m.descripcion ?? (m.tipo === "video" ? "Vídeo" : "Foto")}>
+  <header class="cabecera">
+    <a href="/galeria" class="btn btn-ghost volver"><span aria-hidden="true">←</span> Galería</a>
+    <nav class="flechas" aria-label="Otras fotos">
+      {anterior ? <a class="icono-btn" href={`/galeria/${anterior.id}`} aria-label="Más reciente" rel="prev">‹</a> : <span class="icono-btn" aria-hidden="true" />}
+      {siguiente ? <a class="icono-btn" href={`/galeria/${siguiente.id}`} aria-label="Más antigua" rel="next">›</a> : <span class="icono-btn" aria-hidden="true" />}
+    </nav>
+  </header>
+
+  {ok && <div class="alert alert-ok" role="status"><p>{ok}</p></div>}
+
+  <figure class="visor">
+    {
+      m.tipo === "video" ? (
+        <video controls playsinline preload="metadata" poster={`/api/galeria/${m.id}/miniatura?lado=800`} src={`/api/galeria/${m.id}/archivo`}>
+          Tu navegador no puede reproducir este vídeo.
+        </video>
+      ) : (
+        <img src={`/api/galeria/${m.id}/miniatura?lado=1600`} alt={m.descripcion ?? `Foto del ${fechaLarga(m.fecha)}`} />
+      )
+    }
+    <figcaption class="grid gap-1">
+      {m.descripcion && <span class="descripcion">{m.descripcion}</span>}
+      <span class="hint first-letter:uppercase">
+        {fechaLarga(m.fecha)}{hijo && ` · ${hijo.nombre}`}{m.duracionS != null && ` · ${formatoDuracion(m.duracionS)}`} · {formatoTamano(m.tamano)}
+        {autor && miembros.length > 1 && ` · subida por ${autor.nombre}`}
+      </span>
+    </figcaption>
+  </figure>
+
+  <a class="enlace-tap hint" href={`https://drive.google.com/file/d/${m.driveId}/view`} target="_blank" rel="noopener">Abrir en Google Drive ↗</a>
+
+  <details class="historial" open={!!error}>
+    <summary>Editar descripción y fecha</summary>
+    <form method="post" class="grid gap-3 mt-2" novalidate>
+      <input type="hidden" name="accion" value="guardar" />
+      <div class="field">
+        <label class="label" for="descripcion">Descripción</label>
+        <input class="input" id="descripcion" name="descripcion" maxlength="300" value={m.descripcion ?? ""} autocomplete="off" placeholder="Primera papilla" />
+      </div>
+      <div class="dos">
+        <div class="field">
+          <label class="label" for="fecha">Día</label>
+          <input class="input" type="date" id="fecha" name="fecha" value={m.fecha} max={fechaMadrid()} required aria-invalid={error ? "true" : undefined} />
+          {error && <p class="field-error">{error}</p>}
+        </div>
+        {hijos.length > 0 && (
+          <div class="field">
+            <label class="label" for="hijo">De quién</label>
+            <select class="input" id="hijo" name="hijo">
+              <option value="">De la familia</option>
+              {hijos.map((h) => <option value={h.id} selected={m.hijoId === h.id}>{h.nombre}</option>)}
+            </select>
+          </div>
+        )}
+      </div>
+      <button class="btn btn-primary justify-self-start" type="submit">Guardar</button>
+    </form>
+  </details>
+
+  <form method="post" data-confirmar="¿Borrar de la galería? Irá a la papelera de Google Drive (se puede recuperar 30 días).">
+    <input type="hidden" name="accion" value="borrar" />
+    <button class="btn btn-ghost" type="submit" style="color: var(--danger);">Borrar</button>
+  </form>
+</App>
+
+<script>
+  document.querySelectorAll<HTMLFormElement>("form[data-confirmar]").forEach((f) =>
+    f.addEventListener("submit", (e) => {
+      if (!confirm(f.dataset.confirmar!)) e.preventDefault();
+    }),
+  );
+  // Deslizar a los lados para pasar de foto
+  const visor = document.querySelector<HTMLElement>(".visor");
+  let x0: number | null = null;
+  visor?.addEventListener("touchstart", (e) => (x0 = e.touches[0].clientX), { passive: true });
+  visor?.addEventListener("touchend", (e) => {
+    if (x0 == null || (e.target as HTMLElement).closest("video")) return;
+    const dx = e.changedTouches[0].clientX - x0;
+    x0 = null;
+    if (Math.abs(dx) < 60) return;
+    const destino = document.querySelector<HTMLAnchorElement>(dx > 0 ? "a[rel=prev]" : "a[rel=next]");
+    if (destino) location.href = destino.href;
+  });
+</script>
+
+<style>
+  .cabecera { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
+  .flechas { display: flex; gap: 0.25rem; }
+  .flechas .icono-btn { font-size: 1.8rem; line-height: 1; text-decoration: none; color: var(--ink); }
+  .visor { margin: 0; display: grid; gap: 0.75rem; }
+  .visor img,
+  .visor video {
+    width: 100%;
+    max-height: 72dvh;
+    object-fit: contain;
+    border-radius: var(--radius-lg);
+    background: #000;
+  }
+  .descripcion { font-size: 1.1rem; font-weight: 700; }
+  .dos { display: grid; gap: 1rem; }
+  @media (min-width: 560px) { .dos { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+</style>

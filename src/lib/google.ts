@@ -14,7 +14,10 @@ import { fechaMadrid, horaMadrid, madridAUtc, sumarDias, ZONA } from "./fechas";
 import { leerRecordatorios, TIPOS } from "./eventos";
 
 const API = "https://www.googleapis.com/calendar/v3";
-export const SCOPES = ["openid", "email", "https://www.googleapis.com/auth/calendar"];
+export const SCOPE_CALENDAR = "https://www.googleapis.com/auth/calendar";
+/** Solo los archivos que crea la app (o la carpeta que se elige con el selector de Google) */
+export const SCOPE_DRIVE = "https://www.googleapis.com/auth/drive.file";
+export const SCOPES = ["openid", "email", SCOPE_CALENDAR, SCOPE_DRIVE];
 
 export const googleConfigurado = Boolean(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET);
 
@@ -88,7 +91,7 @@ export function emailDeIdToken(idToken?: string): string {
 // Caché del access token por hogar mientras la función siga viva
 const cache = new Map<string, { token: string; caduca: number }>();
 
-async function accessToken(c: ConexionGoogle): Promise<string> {
+export async function accessToken(c: ConexionGoogle): Promise<string> {
   const guardado = cache.get(c.hogarId);
   if (guardado && guardado.caduca > Date.now() + 60_000) return guardado.token;
   const t = await pedirToken({ refresh_token: await descifrar(c.refreshToken), grant_type: "refresh_token" });

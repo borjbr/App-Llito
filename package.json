@@ -1,6 +1,6 @@
 {
   "name": "app-llito",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "App familiar: hogar y cuidado de los hijos",
   "scripts": {
     "dev": "astro dev",

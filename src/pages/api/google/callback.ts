@@ -9,8 +9,9 @@ import {
   crearCalendarioFamiliar,
   emailDeIdToken,
   ErrorGoogle,
+  conexionDe,
   sincronizarDesdeGoogle,
-  SCOPES,
+  SCOPE_CALENDAR,
 } from "@/lib/google";
 
 /** Vuelta de Google tras aceptar los permisos. */
@@ -29,7 +30,7 @@ export const GET: APIRoute = async ({ url, cookies, redirect, locals }) => {
   try {
     const tokens = await canjearCodigo(code, `${url.origin}/api/google/callback`);
     if (!tokens.refresh_token) return redirect("/agenda/google?error=sin-permiso-offline");
-    if (tokens.scope && !tokens.scope.includes(SCOPES[2])) return redirect("/agenda/google?error=sin-calendario");
+    if (tokens.scope && !tokens.scope.includes(SCOPE_CALENDAR)) return redirect("/agenda/google?error=sin-calendario");
 
     const cuentaEmail = emailDeIdToken(tokens.id_token) || user.email;
     const miembros = await miembrosDe(hogar.id);
@@ -37,7 +38,12 @@ export const GET: APIRoute = async ({ url, cookies, redirect, locals }) => {
       (e) => e.toLowerCase() !== cuentaEmail.toLowerCase(),
     );
 
-    const calendario = await crearCalendarioFamiliar(tokens.access_token, hogar.nombre, otros);
+    // Al reconectar (p. ej. para dar permiso a Drive) se conserva el calendario y la carpeta si es la misma cuenta
+    const anterior = await conexionDe(hogar.id);
+    const mismaCuenta = anterior && anterior.cuentaEmail.toLowerCase() === cuentaEmail.toLowerCase();
+    const calendario = mismaCuenta
+      ? { id: anterior.calendarId, summary: anterior.calendarNombre }
+      : await crearCalendarioFamiliar(tokens.access_token, hogar.nombre, otros);
 
     const fila = {
       hogarId: hogar.id,
@@ -49,13 +55,18 @@ export const GET: APIRoute = async ({ url, cookies, redirect, locals }) => {
       syncToken: null,
       ultimaSync: null,
       ultimoError: null,
+      scopes: tokens.scope ?? null,
+      carpetaDriveId: mismaCuenta ? anterior.carpetaDriveId : null,
+      carpetaDriveNombre: mismaCuenta ? anterior.carpetaDriveNombre : null,
       updatedAt: new Date(),
     };
     await db.insert(conexionGoogle).values(fila).onConflictDoUpdate({ target: conexionGoogle.hogarId, set: fila });
 
     // Sube lo que ya había en la agenda y trae lo que haya en Google
     await sincronizarDesdeGoogle(hogar.id, { forzar: true });
-    return redirect("/agenda/google?ok=conectado");
+    const volver = cookies.get("g_volver")?.value;
+    cookies.delete("g_volver", { path: "/" });
+    return redirect(volver === "galeria" ? "/galeria?ok=conectado" : "/agenda/google?ok=conectado");
   } catch (err) {
     console.error("Error conectando Google Calendar", err);
     const motivo = err instanceof ErrorGoogle && err.status === 403 ? "api-desactivada" : "fallo";
