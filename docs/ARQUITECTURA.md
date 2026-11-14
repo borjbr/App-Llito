@@ -113,6 +113,15 @@ docs/                este documento
 - El service worker guarda en caché solo estáticos (`/_astro`, iconos, fuentes). Las páginas van siempre por la red, para no dejar datos de la familia en el móvil; sin conexión se muestra `offline.html`.
 - `InstalarApp.astro`: botón «Instalar» en Android (evento `beforeinstallprompt`, capturado en `Base.astro`) y pasos con Compartir en iPhone. Se oculta si ya está instalada.
 
+### Galería (Google Drive)
+
+- Tablas `medio` (foto o vídeo: `drive_id`, tipo, tamaño, duración, fecha, descripción, hijo) y `subida` (sesión de subida en curso). `conexion_google` guarda los `scopes` concedidos y la carpeta elegida.
+- Permiso `drive.file`: la app solo ve lo que sube y la carpeta elegida con el selector de Google (Picker), que necesita `GOOGLE_API_KEY` y `GOOGLE_PROJECT_NUMBER`. Solo quien conectó Google recibe el token para abrir el selector.
+- **Subida**: el navegador manda trozos de 4 MB a `/api/galeria/subidas/[id]` y la app los reenvía a una sesión *resumable* de Drive (Vercel corta las peticiones en 4,5 MB). La URL de la sesión no sale del servidor. Vídeos de 60 s como máximo (se comprueba en el móvil antes de subir), fotos de hasta 40 MB y vídeos de hasta 300 MB.
+- **Lectura**: `/api/galeria/[id]/miniatura?lado=` (Drive redimensiona) y `/api/galeria/[id]/archivo` por rangos de hasta 4 MB para el reproductor de vídeo. Respuestas con `Cache-Control: private`.
+- Borrar manda el archivo a la papelera de Drive (recuperable 30 días).
+- Pruebas locales sin Google: un *mock* de `fetch` cargado con `NODE_OPTIONS=--import` que imita OAuth y la subida resumable.
+
 ### Voz
 
 - `src/scripts/voz.ts`: dictado con la Web Speech API del navegador (Chrome, Edge, Safari). Al terminar la frase se envía solo. Donde no existe, el botón se oculta. Sin servidor ni coste.

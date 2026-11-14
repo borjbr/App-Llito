@@ -1,0 +1,224 @@
+---
+import App from "@/layouts/App.astro";
+import { and, desc, eq } from "drizzle-orm";
+import { db } from "@/db/client";
+import { medio } from "@/db/schema";
+import { hijosDe } from "@/lib/familia";
+import { conexionDe, googleConfigurado } from "@/lib/google";
+import { LIMITES, selectorConfigurado, tienePermisoDrive } from "@/lib/drive";
+import { formatoDuracion } from "@/lib/galeria";
+import { fechaMadrid } from "@/lib/fechas";
+
+const usuario = Astro.locals.user!;
+const hogar = Astro.locals.hogar!;
+const [conexion, hijos] = await Promise.all([conexionDe(hogar.id), hijosDe(hogar.id)]);
+const conDrive = tienePermisoDrive(conexion);
+const esDueno = conexion?.userId === usuario.id;
+const lista = conDrive && conexion?.carpetaDriveId;
+
+const filtroTipo = Astro.url.searchParams.get("tipo");
+const filtroHijo = Astro.url.searchParams.get("hijo");
+const medios = lista
+  ? await db
+      .select()
+      .from(medio)
+      .where(
+        and(
+          eq(medio.hogarId, hogar.id),
+          filtroTipo === "imagen" || filtroTipo === "video" ? eq(medio.tipo, filtroTipo) : undefined,
+          filtroHijo && hijos.some((h) => h.id === filtroHijo) ? eq(medio.hijoId, filtroHijo) : undefined,
+        ),
+      )
+      .orderBy(desc(medio.fecha), desc(medio.createdAt))
+  : [];
+
+const fmtMes = new Intl.DateTimeFormat("es-ES", { month: "long", year: "numeric", timeZone: "UTC" });
+const porMes = new Map<string, typeof medios>();
+for (const m of medios) porMes.set(m.fecha.slice(0, 7), [...(porMes.get(m.fecha.slice(0, 7)) ?? []), m]);
+const tituloMes = (mes: string) => {
+  const t = fmtMes.format(new Date(`${mes}-15T12:00:00Z`));
+  return t.charAt(0).toUpperCase() + t.slice(1);
+};
+const enlace = (p: Record<string, string | null>) => {
+  const u = new URLSearchParams();
+  const v = { tipo: filtroTipo, hijo: filtroHijo, ...p };
+  for (const [k, val] of Object.entries(v)) if (val) u.set(k, val);
+  const q = u.toString();
+  return q ? `/galeria?${q}` : "/galeria";
+};
+const MENSAJES: Record<string, string> = {
+  conectado: "Google Drive conectado.",
+  carpeta: "Carpeta elegida. Ya podéis subir fotos y vídeos.",
+  subido: "Subido a la galería.",
+  borrado: "Borrado. Está en la papelera de Google Drive por si lo necesitas.",
+};
+const ok = MENSAJES[Astro.url.searchParams.get("ok") ?? ""];
+const hoy = fechaMadrid();
+---
+
+<App title="Galería">
+  <header class="grid gap-2">
+    <h1 style="color: var(--hijos);">Galería</h1>
+    <p class="text-muted">
+      Fotos y vídeos de la familia, guardados en vuestro Google Drive{conexion?.carpetaDriveNombre && <> (carpeta <strong class="text-ink">{conexion.carpetaDriveNombre}</strong>)</>}.
+    </p>
+  </header>
+
+  {ok && <div class="alert alert-ok" role="status"><p>{ok}</p></div>}
+
+  {
+    !googleConfigurado ? (
+      <section class="card paso">
+        <span class="paso-icono" aria-hidden="true">🔧</span>
+        <div class="grid gap-2">
+          <h2>Falta activar Google</h2>
+          <p class="text-muted">
+            La galería guarda las fotos en Google Drive. Hay que crear las credenciales de Google una vez (unos 15 minutos, gratis). Los pasos están en la guía del proyecto: <code>docs/GOOGLE-CALENDAR.md</code>.
+          </p>
+        </div>
+      </section>
+    ) : !conDrive ? (
+      <section class="card paso">
+        <span class="paso-icono" aria-hidden="true">📁</span>
+        <div class="grid gap-3 justify-items-start">
+          <h2>{conexion ? "Da permiso para Google Drive" : "Conecta Google Drive"}</h2>
+          <p class="text-muted">
+            {conexion
+              ? `Google ya está conectado para el calendario (${conexion.cuentaEmail}), pero falta el permiso de Drive.`
+              : "Las fotos se guardarán en tu Drive. La app solo podrá ver los archivos que suba ella, nada más de tu Drive."}
+          </p>
+          {conexion && !esDueno ? (
+            <p>Pídele a quien conectó Google ({conexion.cuentaEmail}) que abra esta página y lo conecte.</p>
+          ) : (
+            <a href="/api/google/conectar?volver=galeria" class="btn btn-primary">{conexion ? "Dar permiso a Drive" : "Conectar con Google"}</a>
+          )}
+        </div>
+      </section>
+    ) : !conexion!.carpetaDriveId ? (
+      <section class="card paso">
+        <span class="paso-icono" aria-hidden="true">🗂️</span>
+        <div class="grid gap-3 min-w-0">
+          <h2>Elige la carpeta de Drive</h2>
+          {esDueno ? (
+            <>
+              <p class="text-muted">Se hace una vez. Si ya tienes la carpeta, pega aquí su enlace para encontrarla rápido; si no, elígela en el selector.</p>
+              <div class="field">
+                <label class="label" for="enlace-carpeta">Enlace de la carpeta <span class="hint">(opcional)</span></label>
+                <input class="input" id="enlace-carpeta" inputmode="url" autocomplete="off" placeholder="https://drive.google.com/drive/folders/…" />
+              </div>
+              <button type="button" class="btn btn-primary justify-self-start" data-elegir-carpeta disabled={!selectorConfigurado}>
+                Elegir carpeta
+              </button>
+              {!selectorConfigurado && <p class="field-error">Falta configurar GOOGLE_API_KEY y GOOGLE_PROJECT_NUMBER (paso 8 de la guía).</p>}
+              <p class="field-error" data-error-carpeta hidden />
+            </>
+          ) : (
+            <p>Pídele a {conexion!.cuentaEmail} que entre en la Galería y elija la carpeta.</p>
+          )}
+        </div>
+      </section>
+    ) : (
+      <>
+        <section class="subir card" aria-labelledby="t-subir" data-subir data-limites={JSON.stringify(LIMITES)}>
+          <h2 id="t-subir" class="sr-only">Subir fotos y vídeos</h2>
+          <label class="btn btn-primary btn-block subir-boton">
+            <input type="file" accept="image/*,video/*" multiple data-archivos class="sr-only" />
+            <span aria-hidden="true">📷</span> Subir fotos o vídeos
+          </label>
+          <details class="subir-mas">
+            <summary>Añadir descripción{hijos.length > 0 && " o para quién"}</summary>
+            <div class="grid gap-3 mt-2">
+              <div class="field">
+                <label class="label" for="descripcion">Descripción <span class="hint">(opcional)</span></label>
+                <input class="input" id="descripcion" maxlength="300" autocomplete="off" placeholder="Primera papilla" data-descripcion />
+              </div>
+              {hijos.length > 0 && (
+                <div class="field">
+                  <label class="label" for="hijo-subida">De quién</label>
+                  <select class="input" id="hijo-subida" data-hijo>
+                    <option value="">De la familia</option>
+                    {hijos.map((h) => <option value={h.id} selected={hijos.length === 1}>{h.nombre}</option>)}
+                  </select>
+                </div>
+              )}
+            </div>
+          </details>
+          <p class="hint">Vídeos de {LIMITES.videoSegundos} segundos como máximo. Se guardan en Drive, en «{conexion!.carpetaDriveNombre}».</p>
+          <ul class="cola" data-cola aria-live="polite"></ul>
+        </section>
+
+        {(medios.length > 0 || filtroTipo || filtroHijo) && (
+          <nav class="pestanas scroll-x" aria-label="Filtrar">
+            <a href={enlace({ tipo: null })} aria-current={!filtroTipo ? "page" : undefined}>Todo</a>
+            <a href={enlace({ tipo: "imagen" })} aria-current={filtroTipo === "imagen" ? "page" : undefined}><span aria-hidden="true">🖼️</span> Fotos</a>
+            <a href={enlace({ tipo: "video" })} aria-current={filtroTipo === "video" ? "page" : undefined}><span aria-hidden="true">🎬</span> Vídeos</a>
+            {hijos.length > 1 && hijos.map((h) => <a href={enlace({ hijo: filtroHijo === h.id ? null : h.id })} aria-current={filtroHijo === h.id ? "page" : undefined}>{h.nombre}</a>)}
+          </nav>
+        )}
+
+        {medios.length === 0 ? (
+          <div class="card vacio-lista">
+            <span class="emoji" aria-hidden="true">🖼️</span>
+            <p>{filtroTipo || filtroHijo ? "No hay nada con ese filtro." : "Aún no hay fotos. Sube la primera con el botón de arriba."}</p>
+          </div>
+        ) : (
+          [...porMes.entries()].map(([mes, lista]) => (
+            <section class="grid gap-2" aria-label={tituloMes(mes)}>
+              <h2 class="mes">{tituloMes(mes)} <span class="hint">· {lista.length}</span></h2>
+              <ul class="rejilla">
+                {lista.map((m) => (
+                  <li>
+                    <a href={`/galeria/${m.id}`} class="celda" data-icono={m.tipo === "video" ? "🎬" : "🖼️"} aria-label={`${m.tipo === "video" ? "Vídeo" : "Foto"} del ${m.fecha}${m.descripcion ? `: ${m.descripcion}` : ""}`}>
+                      <img src={`/api/galeria/${m.id}/miniatura?lado=400`} alt="" loading="lazy" decoding="async" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'sin-miniatura',textContent:this.closest('a').dataset.icono}))" />
+                      {m.tipo === "video" && <span class="duracion"><span aria-hidden="true">▶</span> {m.duracionS != null ? formatoDuracion(m.duracionS) : ""}</span>}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))
+        )}
+      </>
+    )
+  }
+</App>
+
+<script>
+  import { activarSubida } from "@/scripts/subida";
+  import { activarSelectorCarpeta } from "@/scripts/selector";
+  const zona = document.querySelector<HTMLElement>("[data-subir]");
+  if (zona) activarSubida(zona);
+  const elegir = document.querySelector<HTMLButtonElement>("[data-elegir-carpeta]");
+  if (elegir) activarSelectorCarpeta(elegir);
+</script>
+
+<style>
+  .paso { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 1rem; align-items: start; padding: 1.1rem; }
+  .paso-icono { font-size: 2rem; }
+  .paso h2 { font-size: 1.2rem; }
+  .subir { display: grid; gap: 0.75rem; padding: 1rem; }
+  .subir-boton { cursor: pointer; font-size: 1.05rem; min-height: 56px; }
+  .subir-boton:focus-within { outline: 3px solid var(--focus); outline-offset: 2px; }
+  .subir-mas > summary { cursor: pointer; font-weight: 700; color: var(--muted); font-size: 0.92rem; display: flex; align-items: center; }
+  .cola { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
+  .cola:empty { display: none; }
+  .mes { font-size: 1rem; }
+  .rejilla { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; border-radius: var(--radius); overflow: hidden; }
+  @media (min-width: 640px) { .rejilla { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; } }
+  .celda { position: relative; display: block; aspect-ratio: 1; background: var(--surface-2); overflow: hidden; }
+  .celda img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.2s; }
+  .celda:hover img { transform: scale(1.03); }
+  .celda :global(.sin-miniatura) { display: grid; place-items: center; width: 100%; height: 100%; font-size: 1.8rem; }
+  .duracion {
+    position: absolute;
+    right: 4px;
+    bottom: 4px;
+    padding: 0.05rem 0.4rem;
+    border-radius: 6px;
+    background: rgb(0 0 0 / 0.6);
+    color: #fff;
+    font-size: 0.75rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+</style>

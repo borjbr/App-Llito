@@ -2,6 +2,14 @@
 
 Cada versión lleva número (mayor.menor.parche) y fecha. Esta página se muestra en la app en /novedades.
 
+## 1.5.0 — 2026-11-14
+
+- Nueva **Galería** de fotos y vídeos (de 1 minuto como máximo), guardados en vuestra carpeta de Google Drive.
+- Subida desde el móvil de varias a la vez, con barra de progreso, descripción y para quién es. Se reintenta sola si la cobertura falla.
+- Rejilla por meses con filtro de fotos y vídeos; foto en grande, vídeo con reproductor y paso de una a otra deslizando.
+- Al borrar, el archivo va a la papelera de Drive y se puede recuperar.
+- La app solo puede ver en Drive lo que sube ella, no el resto de vuestros archivos.
+
 ## 1.4.0 — 2026-11-14
 
 - Nueva sección **Consultas** en Hijos: cada visita al médico con especialidad, centro, médico, peso, talla, perímetro de la cabeza, lo que os dijeron y el tratamiento.

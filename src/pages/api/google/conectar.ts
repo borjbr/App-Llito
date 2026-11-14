@@ -14,5 +14,9 @@ export const GET: APIRoute = ({ url, cookies, redirect, locals }) => {
     path: "/api/google",
     maxAge: 600,
   });
+  // A dónde volver al terminar (solo valores conocidos)
+  if (url.searchParams.get("volver") === "galeria") {
+    cookies.set("g_volver", "galeria", { httpOnly: true, sameSite: "lax", secure: url.protocol === "https:", path: "/", maxAge: 600 });
+  }
   return redirect(urlAutorizacion(`${url.origin}/api/google/callback`, state));
 };

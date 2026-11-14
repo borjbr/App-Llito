@@ -25,6 +25,9 @@ export default defineConfig({
       BETTER_AUTH_URL: envField.string({ context: "server", access: "secret", optional: true }),
       GOOGLE_CLIENT_ID: envField.string({ context: "server", access: "secret", optional: true }),
       GOOGLE_CLIENT_SECRET: envField.string({ context: "server", access: "secret", optional: true }),
+      // Selector de carpetas de Google (Picker): clave de API restringida al dominio y número de proyecto
+      GOOGLE_API_KEY: envField.string({ context: "server", access: "secret", optional: true }),
+      GOOGLE_PROJECT_NUMBER: envField.string({ context: "server", access: "secret", optional: true }),
       // Asistente (OpenAI). Sin clave, el chat se muestra como «no configurado».
       OPENAI_API_KEY: envField.string({ context: "server", access: "secret", optional: true }),
       OPENAI_MODEL: envField.string({ context: "server", access: "secret", default: "gpt-4o-mini" }),
