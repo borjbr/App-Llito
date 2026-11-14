@@ -1,0 +1,141 @@
+---
+/**
+ * Formulario de consulta médica (alta y edición). Pensado para rellenarlo en
+ * el móvil al salir de la consulta: lo básico arriba, medidas con teclado
+ * numérico y notas largas al final.
+ */
+import ResumenErrores from "@/components/ResumenErrores.astro";
+import { ESPECIALIDADES, LIMITES, type ValoresConsulta } from "@/lib/consultas";
+import type { Hijo } from "@/db/schema";
+
+interface Props {
+  valores: ValoresConsulta;
+  errores: Record<string, string>;
+  hijos: Hijo[];
+  hoy: string;
+  textoBoton: string;
+}
+const { valores: v, errores, hijos, hoy, textoBoton } = Astro.props;
+const ETIQUETAS = {
+  hijo: "Para quién",
+  fecha: "Día",
+  especialidad: "Especialidad",
+  peso: "Peso",
+  talla: "Talla",
+  perimetro: "Perímetro craneal",
+};
+const err = (k: string): { "aria-invalid"?: "true"; "aria-describedby"?: string } =>
+  errores[k] ? { "aria-invalid": "true", "aria-describedby": `${k}-error` } : {};
+---
+
+<form method="post" class="card grid gap-5" novalidate>
+  <ResumenErrores errores={errores} etiquetas={ETIQUETAS} />
+  {v.eventoId && <input type="hidden" name="evento" value={v.eventoId} />}
+
+  <fieldset class="grid gap-4">
+    <legend class="seccion">La consulta</legend>
+    {
+      hijos.length > 1 ? (
+        <div class="field">
+          <label class="label" for="hijo">Para quién</label>
+          <select class="input" id="hijo" name="hijo" {...err("hijo")}>
+            {hijos.map((h) => <option value={h.id} selected={v.hijoId === h.id}>{h.nombre}</option>)}
+          </select>
+          {errores.hijo && <p class="field-error" id="hijo-error">{errores.hijo}</p>}
+        </div>
+      ) : (
+        <input type="hidden" name="hijo" value={hijos[0]?.id ?? ""} />
+      )
+    }
+    <div class="dos">
+      <div class="field">
+        <label class="label" for="fecha">Día</label>
+        <input class="input" type="date" id="fecha" name="fecha" value={v.fecha} max={hoy} required {...err("fecha")} />
+        {errores.fecha && <p class="field-error" id="fecha-error">{errores.fecha}</p>}
+      </div>
+      <div class="field">
+        <label class="label" for="especialidad">Especialidad</label>
+        <input class="input" id="especialidad" name="especialidad" list="especialidades" value={v.especialidad} maxlength={LIMITES.especialidad} autocomplete="off" placeholder="Pediatría" {...err("especialidad")} />
+        <datalist id="especialidades">{ESPECIALIDADES.map((e) => <option value={e} />)}</datalist>
+        {errores.especialidad && <p class="field-error" id="especialidad-error">{errores.especialidad}</p>}
+      </div>
+    </div>
+    <div class="dos">
+      <div class="field">
+        <label class="label" for="centro">Dónde <span class="hint">(opcional)</span></label>
+        <input class="input" id="centro" name="centro" value={v.centro} maxlength={LIMITES.centro} autocomplete="off" placeholder="CS CEA" />
+      </div>
+      <div class="field">
+        <label class="label" for="profesional">Médico/a <span class="hint">(opcional)</span></label>
+        <input class="input" id="profesional" name="profesional" value={v.profesional} maxlength={LIMITES.profesional} autocomplete="off" placeholder="Dra. López" />
+      </div>
+    </div>
+    <div class="field">
+      <label class="label" for="motivo">Motivo <span class="hint">(opcional)</span></label>
+      <input class="input" id="motivo" name="motivo" value={v.motivo} maxlength={LIMITES.motivo} autocomplete="off" placeholder="Revisión de los 6 meses" />
+    </div>
+  </fieldset>
+
+  <fieldset class="grid gap-3">
+    <legend class="seccion">Medidas <span class="hint">(si las tomaron)</span></legend>
+    <div class="medidas">
+      <div class="field">
+        <label class="label" for="peso">Peso</label>
+        <div class="con-unidad">
+          <input class="input num" id="peso" name="peso" inputmode="decimal" value={v.peso} autocomplete="off" placeholder="7,35" {...err("peso")} />
+          <span aria-hidden="true">kg</span>
+        </div>
+      </div>
+      <div class="field">
+        <label class="label" for="talla">Talla</label>
+        <div class="con-unidad">
+          <input class="input num" id="talla" name="talla" inputmode="decimal" value={v.talla} autocomplete="off" placeholder="66,5" {...err("talla")} />
+          <span aria-hidden="true">cm</span>
+        </div>
+      </div>
+      <div class="field">
+        <label class="label" for="perimetro">Cabeza</label>
+        <div class="con-unidad">
+          <input class="input num" id="perimetro" name="perimetro" inputmode="decimal" value={v.perimetro} autocomplete="off" placeholder="43" aria-describedby={errores.perimetro ? "perimetro-error perimetro-ayuda" : "perimetro-ayuda"} aria-invalid={errores.perimetro ? "true" : undefined} />
+          <span aria-hidden="true">cm</span>
+        </div>
+      </div>
+    </div>
+    <p class="hint" id="perimetro-ayuda">«Cabeza» es el perímetro craneal.</p>
+    {["peso", "talla", "perimetro"].map((k) => errores[k] && <p class="field-error" id={`${k}-error`}>{errores[k]}</p>)}
+  </fieldset>
+
+  <fieldset class="grid gap-4">
+    <legend class="seccion">Qué os dijeron</legend>
+    <div class="field">
+      <label class="label" for="notas">Notas</label>
+      <textarea class="input" id="notas" name="notas" rows="5" maxlength={LIMITES.notas} placeholder="Todo bien. Está creciendo en su curva. Empezar con fruta triturada.">{v.notas}</textarea>
+    </div>
+    <div class="field">
+      <label class="label" for="indicaciones">Tratamiento y próximos pasos <span class="hint">(opcional)</span></label>
+      <textarea class="input" id="indicaciones" name="indicaciones" rows="3" maxlength={LIMITES.indicaciones} placeholder="Vitamina D, 6 gotas al día. Revisión en 2 meses.">{v.indicaciones}</textarea>
+    </div>
+  </fieldset>
+
+  <slot name="antes-del-boton" />
+  <button class="btn btn-primary btn-block" type="submit">{textoBoton}</button>
+</form>
+
+<style>
+  .seccion { font-family: var(--font-display); font-size: 1.15rem; font-weight: 700; margin-bottom: 0.25rem; }
+  .seccion .hint { font-family: var(--font-body); font-weight: 400; }
+  .dos { display: grid; gap: 1rem; }
+  @media (min-width: 560px) { .dos { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+  .medidas { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.6rem; }
+  .con-unidad { position: relative; }
+  .con-unidad .input { padding-right: 2.3rem; }
+  .con-unidad span {
+    position: absolute;
+    right: 0.75rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--muted);
+    font-size: 0.9rem;
+    pointer-events: none;
+  }
+</style>

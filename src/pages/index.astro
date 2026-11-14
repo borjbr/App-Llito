@@ -4,6 +4,7 @@ import { hijosDe, listaNombres, miembrosDe } from "@/lib/familia";
 import { eventosEnRango, textoHora, TIPOS } from "@/lib/eventos";
 import { fechaMadrid, horaMadrid, nombreDia, sumarDias } from "@/lib/fechas";
 import { VERSION } from "@/lib/version";
+import InstalarApp from "@/components/InstalarApp.astro";
 import { db } from "@/db/client";
 import { mensajeChat } from "@/db/schema";
 import { and, desc, eq } from "drizzle-orm";
@@ -240,6 +241,8 @@ const textoHijos =
       )
     }
   </section>
+
+  <InstalarApp cerrable />
 
   <a href="/mi-perfil/familia" class="familia">
     <span class="flex -space-x-2" aria-hidden="true">

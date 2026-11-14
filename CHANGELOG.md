@@ -2,6 +2,15 @@
 
 Cada versión lleva número (mayor.menor.parche) y fecha. Esta página se muestra en la app en /novedades.
 
+## 1.4.0 — 2026-11-14
+
+- Nueva sección **Consultas** en Hijos: cada visita al médico con especialidad, centro, médico, peso, talla, perímetro de la cabeza, lo que os dijeron y el tratamiento.
+- Resumen de las últimas medidas con lo que ha cambiado desde la consulta anterior, y gráfica de crecimiento por meses de edad.
+- Búsqueda y filtro por especialidad («vitamina», «neurólogo»…).
+- Desde una cita médica pasada de la agenda, «¿Cómo fue? Apunta la consulta» con los datos ya rellenos.
+- Kissbell puede consultar lo apuntado: «¿qué nos dijo el neurólogo?».
+- La app se puede instalar en el móvil: icono propio, pantalla completa, atajos al mantener pulsado el icono y aviso cuando no hay conexión.
+
 ## 1.3.1 — 2026-11-14
 
 - Revisión completa en el móvil: ninguna pantalla se sale ya por los lados (antes Inicio se desplazaba a 360 px).

@@ -1,0 +1,362 @@
+---
+import App from "@/layouts/App.astro";
+import { and, eq } from "drizzle-orm";
+import { db } from "@/db/client";
+import { hijo } from "@/db/schema";
+import { esFechaValida, fechaMadrid } from "@/lib/fechas";
+import {
+  consultasDe,
+  diferencia,
+  edadEn,
+  formatoCm,
+  formatoPeso,
+  hijoDelHogar,
+  iconoEspecialidad,
+  mesesEntre,
+  ultimasMedidas,
+} from "@/lib/consultas";
+import { normalizar } from "@/lib/alimentos";
+
+const hogar = Astro.locals.hogar!;
+const hoy = fechaMadrid();
+let errorNacimiento = "";
+
+// Guardar la fecha de nacimiento (para ver la edad en cada consulta)
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  const id = String(form.get("hijo") ?? "");
+  const fecha = String(form.get("nacimiento") ?? "");
+  if (!esFechaValida(fecha) || fecha > hoy) {
+    errorNacimiento = "Elige una fecha válida.";
+  } else {
+    await db.update(hijo).set({ fechaNacimiento: fecha, updatedAt: new Date() }).where(and(eq(hijo.id, id), eq(hijo.hogarId, hogar.id)));
+    return Astro.redirect(`/hijos/consultas?hijo=${id}&ok=nacimiento`, 303);
+  }
+}
+
+const { hijos, actual } = await hijoDelHogar(hogar.id, Astro.url.searchParams.get("hijo"));
+if (!actual) return Astro.redirect("/hijos", 303);
+
+const todas = await consultasDe(hogar.id, actual.id);
+const medidas = ultimasMedidas(todas);
+
+// Filtro por especialidad y búsqueda
+const q = (Astro.url.searchParams.get("q") ?? "").trim().slice(0, 80);
+const filtro = Astro.url.searchParams.get("esp") ?? "";
+const especialidades = [...new Set(todas.map((c) => c.especialidad).filter(Boolean) as string[])];
+const termino = normalizar(q);
+const consultas = todas.filter(
+  (c) =>
+    (!filtro || c.especialidad === filtro) &&
+    (!termino || [c.especialidad, c.centro, c.profesional, c.motivo, c.notas, c.indicaciones].some((t) => t && normalizar(t).includes(termino))),
+);
+
+// Agrupar por mes
+const fmtMes = new Intl.DateTimeFormat("es-ES", { month: "long", year: "numeric", timeZone: "UTC" });
+const fmtDia = new Intl.DateTimeFormat("es-ES", { weekday: "short", day: "numeric", timeZone: "UTC" });
+const porMes = new Map<string, typeof consultas>();
+for (const c of consultas) porMes.set(c.fecha.slice(0, 7), [...(porMes.get(c.fecha.slice(0, 7)) ?? []), c]);
+const tituloMes = (m: string) => {
+  const t = fmtMes.format(new Date(`${m}-15T12:00:00Z`));
+  return t.charAt(0).toUpperCase() + t.slice(1);
+};
+
+// Gráfica de crecimiento
+type Medida = "peso" | "talla" | "perimetro";
+const MEDIDAS: Record<Medida, { nombre: string; campo: "pesoGramos" | "tallaMm" | "perimetroMm"; fmt: (n: number) => string; color: string }> = {
+  peso: { nombre: "Peso", campo: "pesoGramos", fmt: formatoPeso, color: "var(--hijos)" },
+  talla: { nombre: "Talla", campo: "tallaMm", fmt: formatoCm, color: "var(--accent)" },
+  perimetro: { nombre: "Cabeza", campo: "perimetroMm", fmt: formatoCm, color: "var(--hogar)" },
+};
+const medidaParam = Astro.url.searchParams.get("medida") as Medida | null;
+const medida: Medida = medidaParam && medidaParam in MEDIDAS ? medidaParam : "peso";
+const M = MEDIDAS[medida];
+const puntos = todas
+  .filter((c) => c[M.campo] != null)
+  .map((c) => ({ fecha: c.fecha, valor: c[M.campo]! }))
+  .reverse();
+const nacimiento = actual.fechaNacimiento;
+const xDe = (f: string) => (nacimiento ? mesesEntre(nacimiento, f) : (Date.parse(`${f}T12:00:00Z`) - Date.parse(`${puntos[0]?.fecha}T12:00:00Z`)) / (30.4375 * 86_400_000));
+
+const G = { w: 320, h: 180, izq: 44, der: 12, arr: 14, aba: 28 };
+let grafica: { path: string; circulos: { cx: number; cy: number; etiqueta: string; fecha: string }[]; ejeY: { y: number; t: string }[]; ejeX: { x: number; t: string }[] } | null = null;
+if (puntos.length >= 1) {
+  const xs = puntos.map((p) => xDe(p.fecha));
+  const vs = puntos.map((p) => p.valor);
+  let xmin = Math.min(...xs), xmax = Math.max(...xs);
+  if (xmax - xmin < 1) { xmin -= 0.5; xmax += 0.5; }
+  let vmin = Math.min(...vs), vmax = Math.max(...vs);
+  const margen = Math.max((vmax - vmin) * 0.15, medida === "peso" ? 300 : 10);
+  vmin -= margen; vmax += margen;
+  const X = (x: number) => G.izq + ((x - xmin) / (xmax - xmin)) * (G.w - G.izq - G.der);
+  const Y = (v: number) => G.arr + (1 - (v - vmin) / (vmax - vmin)) * (G.h - G.arr - G.aba);
+  const circulos = puntos.map((p, i) => ({ cx: X(xs[i]), cy: Y(p.valor), etiqueta: M.fmt(p.valor), fecha: p.fecha }));
+  const path = circulos.map((c, i) => `${i ? "L" : "M"}${c.cx.toFixed(1)},${c.cy.toFixed(1)}`).join(" ");
+  const ejeY = [0, 0.5, 1].map((f) => {
+    const v = vmin + (vmax - vmin) * f;
+    return { y: Y(v), t: medida === "peso" ? (v / 1000).toLocaleString("es-ES", { maximumFractionDigits: 1 }) : (v / 10).toLocaleString("es-ES", { maximumFractionDigits: 0 }) };
+  });
+  // Marcas en meses enteros, sin repetir (como mucho 6)
+  let ejeX: { x: number; t: string }[] = [];
+  if (nacimiento) {
+    const desde = Math.ceil(xmin), hasta = Math.floor(xmax);
+    const paso = Math.max(1, Math.ceil((hasta - desde + 1) / 6));
+    for (let m = desde; m <= hasta; m += paso) if (m >= 0) ejeX.push({ x: X(m), t: `${m} m` });
+  }
+  grafica = { path, circulos, ejeY, ejeX };
+}
+
+const ok = { creada: "Consulta guardada.", borrada: "Consulta borrada.", nacimiento: "Fecha de nacimiento guardada." }[Astro.url.searchParams.get("ok") ?? ""];
+const enlace = (p: Record<string, string>) => {
+  const u = new URLSearchParams({ hijo: actual.id, ...(filtro ? { esp: filtro } : {}), ...(q ? { q } : {}), medida, ...p });
+  for (const [k, val] of [...u.entries()]) if (!val) u.delete(k);
+  return `/hijos/consultas?${u}`;
+};
+const RESUMEN = [
+  { k: "peso", icono: "⚖️", nombre: "Peso", dato: medidas.peso, fmt: formatoPeso, tipo: "peso" as const },
+  { k: "talla", icono: "📏", nombre: "Talla", dato: medidas.talla, fmt: formatoCm, tipo: "cm" as const },
+  { k: "perimetro", icono: "🧒", nombre: "Cabeza", dato: medidas.perimetro, fmt: formatoCm, tipo: "cm" as const },
+];
+---
+
+<App title={`Consultas de ${actual.nombre}`}>
+  <header class="grid gap-2">
+    <a href="/hijos" class="btn btn-ghost volver"><span aria-hidden="true">←</span> {hijos.length === 1 ? actual.nombre : "Hijos"}</a>
+    <div class="flex items-center justify-between gap-3 flex-wrap">
+      <h1 style="color: var(--hijos);">Consultas</h1>
+      <a href={`/hijos/consultas/nueva?hijo=${actual.id}`} class="btn btn-primary"><span aria-hidden="true">＋</span> Nueva</a>
+    </div>
+    <p class="text-muted">
+      Médicos, medidas y lo que os dijeron{nacimiento && <> · {actual.nombre} tiene <strong class="text-ink">{edadEn(nacimiento, hoy)}</strong></>}.
+    </p>
+  </header>
+
+  {ok && <div class="alert alert-ok" role="status"><p>{ok}</p></div>}
+
+  {
+    hijos.length > 1 && (
+      <nav class="pestanas scroll-x" aria-label="Elegir hijo">
+        {hijos.map((h) => <a href={`/hijos/consultas?hijo=${h.id}`} aria-current={h.id === actual.id ? "page" : undefined}>{h.nombre}</a>)}
+      </nav>
+    )
+  }
+
+  {
+    !nacimiento && (
+      <form method="post" class="form-alta nacimiento" novalidate>
+        <input type="hidden" name="hijo" value={actual.id} />
+        <div class="form-alta-linea">
+          <div class="field">
+            <label class="label" for="nacimiento">¿Cuándo nació {actual.nombre}?</label>
+            <input class="input" type="date" id="nacimiento" name="nacimiento" max={hoy} required aria-invalid={errorNacimiento ? "true" : undefined} aria-describedby="nacimiento-ayuda" />
+          </div>
+          <button class="btn btn-secondary" type="submit">Guardar</button>
+        </div>
+        {errorNacimiento && <p class="field-error">{errorNacimiento}</p>}
+        <p class="hint" id="nacimiento-ayuda">Así verás la edad que tenía en cada consulta y la gráfica por meses.</p>
+      </form>
+    )
+  }
+
+  {
+    todas.length > 0 && (
+      <section aria-labelledby="t-medidas" class="grid gap-3">
+        <h2 id="t-medidas">Últimas medidas</h2>
+        <ul class="medidas-resumen">
+          {RESUMEN.map((r) => (
+            <li>
+              <a href={enlace({ medida: r.k })} class="medida" aria-current={medida === r.k ? "true" : undefined}>
+                <span class="medida-nombre"><span aria-hidden="true">{r.icono}</span> {r.nombre}</span>
+                <strong class="num">{r.dato ? r.fmt(r.dato.actual) : "—"}</strong>
+                <span class="medida-detalle num">
+                  {r.dato ? (r.dato.anterior != null ? diferencia(r.dato.actual, r.dato.anterior, r.tipo) : "Primera medida") : "Sin datos"}
+                </span>
+              </a>
+            </li>
+          ))}
+        </ul>
+
+        {grafica && (
+          <figure class="card grafica" aria-labelledby="t-grafica">
+            <figcaption id="t-grafica" class="grafica-titulo">
+              <span>{M.nombre}{nacimiento ? " por edad" : ""}</span>
+              <span class="hint">{puntos.length} {puntos.length === 1 ? "medida" : "medidas"}</span>
+            </figcaption>
+            <svg viewBox={`0 0 ${G.w} ${G.h}`} role="img" aria-label={`${M.nombre}: ${puntos.map((p) => `${p.fecha}, ${M.fmt(p.valor)}`).join("; ")}`}>
+              {grafica.ejeY.map((e) => (
+                <g>
+                  <line x1={G.izq} x2={G.w - G.der} y1={e.y} y2={e.y} class="rejilla" />
+                  <text x={G.izq - 6} y={e.y + 4} text-anchor="end" class="eje">{e.t}</text>
+                </g>
+              ))}
+              {grafica.ejeX.map((e) => <text x={e.x} y={G.h - 8} text-anchor="middle" class="eje">{e.t}</text>)}
+              <path d={grafica.path} fill="none" stroke={M.color} stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" />
+              {grafica.circulos.map((c, i) => (
+                <circle cx={c.cx} cy={c.cy} r={i === grafica!.circulos.length - 1 ? 5 : 3.5} fill={i === grafica!.circulos.length - 1 ? M.color : "var(--surface)"} stroke={M.color} stroke-width="2">
+                  <title>{c.fecha}: {c.etiqueta}</title>
+                </circle>
+              ))}
+            </svg>
+            <p class="hint">
+              {nacimiento ? "Eje horizontal: meses de edad." : "Añade la fecha de nacimiento para ver la edad en meses."} Para saber su percentil, pregunta en la próxima revisión.
+            </p>
+          </figure>
+        )}
+      </section>
+    )
+  }
+
+  <section aria-labelledby="t-historial" class="grid gap-3">
+    <h2 id="t-historial">Historial {todas.length > 0 && <span class="chip num">{todas.length}</span>}</h2>
+
+    {
+      todas.length > 2 && (
+        <form method="get" class="buscar" role="search">
+          <input type="hidden" name="hijo" value={actual.id} />
+          {filtro && <input type="hidden" name="esp" value={filtro} />}
+          <label for="q" class="sr-only">Buscar en las consultas</label>
+          <input class="input" id="q" name="q" type="search" value={q} placeholder="Buscar: vitamina, neurólogo…" enterkeyhint="search" autocomplete="off" />
+        </form>
+      )
+    }
+    {
+      especialidades.length > 1 && (
+        <nav class="pestanas scroll-x" aria-label="Filtrar por especialidad">
+          <a href={enlace({ esp: "" })} aria-current={!filtro ? "page" : undefined}>Todas</a>
+          {especialidades.map((e) => (
+            <a href={enlace({ esp: e })} aria-current={filtro === e ? "page" : undefined}>
+              <span aria-hidden="true">{iconoEspecialidad(e)}</span> {e}
+            </a>
+          ))}
+        </nav>
+      )
+    }
+
+    {
+      todas.length === 0 ? (
+        <div class="card vacio-lista">
+          <span class="emoji" aria-hidden="true">🩺</span>
+          <p>Aún no hay consultas. Al salir del médico, apunta lo que os dijeron y las medidas.</p>
+          <a href={`/hijos/consultas/nueva?hijo=${actual.id}`} class="btn btn-primary">Apuntar la primera</a>
+        </div>
+      ) : consultas.length === 0 ? (
+        <div class="card vacio-lista">
+          <p>No hay consultas que coincidan.</p>
+          <a href={`/hijos/consultas?hijo=${actual.id}`} class="btn btn-secondary">Ver todas</a>
+        </div>
+      ) : (
+        [...porMes.entries()].map(([mes, lista]) => (
+          <div class="grupo-dia">
+            <h3>{tituloMes(mes)}</h3>
+            <ul class="lista">
+              {lista.map((c) => {
+                const medidasTxt = [c.pesoGramos && formatoPeso(c.pesoGramos), c.tallaMm && formatoCm(c.tallaMm), c.perimetroMm && `cabeza ${formatoCm(c.perimetroMm)}`].filter(Boolean).join(" · ");
+                const resumen = c.notas || c.indicaciones || c.motivo;
+                return (
+                  <li>
+                    <a href={`/hijos/consultas/${c.id}`} class="consulta">
+                      <span class="consulta-dia" aria-hidden="true">
+                        <span>{fmtDia.format(new Date(`${c.fecha}T12:00:00Z`)).split(" ")[0].replace(",", "")}</span>
+                        <strong>{Number(c.fecha.slice(8))}</strong>
+                      </span>
+                      <span class="grid gap-0.5 min-w-0">
+                        <span class="consulta-titulo">
+                          <span aria-hidden="true">{iconoEspecialidad(c.especialidad)} </span>
+                          {c.especialidad ?? "Consulta"}
+                          {c.centro && <span class="consulta-centro"> · {c.centro}</span>}
+                        </span>
+                        {medidasTxt && <span class="consulta-medidas num">{medidasTxt}</span>}
+                        {resumen && <span class="consulta-resumen">{resumen}</span>}
+                        <span class="sr-only">{c.fecha}</span>
+                      </span>
+                      <span class="consulta-flecha" aria-hidden="true">→</span>
+                    </a>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))
+      )
+    }
+  </section>
+
+  {
+    nacimiento && (
+      <details class="historial">
+        <summary>Fecha de nacimiento: {new Intl.DateTimeFormat("es-ES", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${nacimiento}T12:00:00Z`))}</summary>
+        <form method="post" class="form-alta-linea mt-2" novalidate>
+          <input type="hidden" name="hijo" value={actual.id} />
+          <div class="field">
+            <label class="label" for="nacimiento2">Cambiar</label>
+            <input class="input" type="date" id="nacimiento2" name="nacimiento" value={nacimiento} max={hoy} required />
+          </div>
+          <button class="btn btn-secondary" type="submit">Guardar</button>
+        </form>
+      </details>
+    )
+  }
+</App>
+
+<style>
+  .medidas-resumen { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.5rem; }
+  .medida {
+    display: grid;
+    gap: 0.1rem;
+    padding: 0.7rem 0.6rem;
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    border: 2px solid var(--line);
+    color: var(--ink);
+    text-decoration: none;
+    min-height: 100%;
+  }
+  .medida[aria-current] { border-color: var(--hijos); background: var(--hijos-soft); }
+  .medida-nombre { font-size: 0.8rem; font-weight: 700; color: var(--muted); white-space: nowrap; }
+  .medida strong { font-family: var(--font-display); font-size: clamp(1rem, 4.6vw, 1.3rem); line-height: 1.15; }
+  .medida-detalle { font-size: 0.75rem; color: var(--muted); }
+  .grafica { display: grid; gap: 0.5rem; padding: 0.9rem; margin: 0; }
+  .grafica-titulo { display: flex; justify-content: space-between; align-items: baseline; font-weight: 700; }
+  .grafica svg { width: 100%; height: auto; overflow: visible; }
+  .rejilla { stroke: var(--line); stroke-width: 1; }
+  .eje { fill: var(--muted); font-size: 10px; font-family: var(--font-body); }
+  .buscar .input { border-radius: 999px; padding-inline: 1.1rem; }
+  .consulta {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 0.75rem;
+    align-items: center;
+    padding: 0.7rem 0.75rem;
+    border-radius: var(--radius);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    color: var(--ink);
+    text-decoration: none;
+  }
+  .consulta:hover { border-color: var(--hijos); }
+  .consulta-dia {
+    display: grid;
+    justify-items: center;
+    width: 2.9rem;
+    padding: 0.25rem 0;
+    border-radius: 12px;
+    background: var(--hijos-soft);
+    color: var(--hijos);
+    line-height: 1.1;
+    align-self: start;
+  }
+  .consulta-dia span { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; }
+  .consulta-dia strong { font-size: 1.15rem; }
+  .consulta-titulo { font-weight: 700; overflow-wrap: anywhere; }
+  .consulta-centro { font-weight: 400; color: var(--muted); }
+  .consulta-medidas { font-size: 0.85rem; font-weight: 700; color: var(--hijos); }
+  .consulta-resumen {
+    font-size: 0.88rem;
+    color: var(--muted);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .consulta-flecha { color: var(--muted); }
+</style>

@@ -1,0 +1,24 @@
+{
+  "name": "App-Llito",
+  "short_name": "Llito",
+  "description": "Organiza el hogar y el cuidado de vuestros hijos.",
+  "lang": "es",
+  "id": "/",
+  "start_url": "/?app=1",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f3f5f9",
+  "theme_color": "#2945c7",
+  "icons": [
+    { "src": "/iconos/icono-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/iconos/icono-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/iconos/icono-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Preguntar a Kissbell", "short_name": "Kissbell", "url": "/asistente", "icons": [{ "src": "/iconos/icono-192.png", "sizes": "192x192" }] },
+    { "name": "Lista de la compra", "short_name": "Compra", "url": "/hogar/compra", "icons": [{ "src": "/iconos/icono-192.png", "sizes": "192x192" }] },
+    { "name": "Nueva consulta", "short_name": "Consulta", "url": "/hijos/consultas/nueva", "icons": [{ "src": "/iconos/icono-192.png", "sizes": "192x192" }] },
+    { "name": "Agenda", "url": "/agenda", "icons": [{ "src": "/iconos/icono-192.png", "sizes": "192x192" }] }
+  ]
+}

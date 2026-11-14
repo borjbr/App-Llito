@@ -2,7 +2,8 @@
 import App from "@/layouts/App.astro";
 import FormEvento from "@/components/FormEvento.astro";
 import { db } from "@/db/client";
-import { evento } from "@/db/schema";
+import { consulta, evento } from "@/db/schema";
+import { fechaMadrid } from "@/lib/fechas";
 import { hijosDe, miembrosDe } from "@/lib/familia";
 import { aFila, buscarEvento, TIPOS } from "@/lib/eventos";
 import { leerFormEvento, valoresDe, destinoSeguro } from "@/lib/formEvento";
@@ -62,6 +63,12 @@ if (Astro.request.method === "POST") {
 }
 
 const t = TIPOS[actual.tipo];
+// Citas médicas y vacunas ya pasadas: apuntar cómo fue (o ver lo apuntado)
+const esMedica = (actual.tipo === "cita_medica" || actual.tipo === "vacuna") && hijos.length > 0;
+const yaPaso = !!actual.fecha && actual.fecha <= fechaMadrid();
+const [consultaHecha] = esMedica
+  ? await db.select({ id: consulta.id }).from(consulta).where(eq(consulta.eventoId, actual.id)).limit(1)
+  : [];
 ---
 
 <App title={actual.titulo}>
@@ -74,6 +81,23 @@ const t = TIPOS[actual.tipo];
       )
     }
   </header>
+
+  {
+    esMedica &&
+      (consultaHecha ? (
+        <a href={`/hijos/consultas/${consultaHecha.id}`} class="aviso-consulta">
+          <span aria-hidden="true">🩺</span>
+          <span><strong>Ver lo que os dijeron</strong><span class="hint block">Consulta apuntada con medidas y notas.</span></span>
+          <span aria-hidden="true">→</span>
+        </a>
+      ) : yaPaso ? (
+        <a href={`/hijos/consultas/nueva?evento=${actual.id}`} class="aviso-consulta pendiente">
+          <span aria-hidden="true">🩺</span>
+          <span><strong>¿Cómo fue? Apunta la consulta</strong><span class="hint block">Peso, talla y lo que os dijeron, con los datos de esta cita ya rellenos.</span></span>
+          <span aria-hidden="true">→</span>
+        </a>
+      ) : null)
+  }
 
   {
     confirmarBorrado && (
@@ -113,3 +137,21 @@ const t = TIPOS[actual.tipo];
 <script>
   document.querySelector<HTMLElement>("[data-foco]")?.focus();
 </script>
+
+<style>
+  .aviso-consulta {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 0.75rem;
+    align-items: center;
+    padding: 0.9rem 1rem;
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    border: 2px solid var(--line);
+    color: var(--ink);
+    text-decoration: none;
+    font-size: 1.05rem;
+  }
+  .aviso-consulta > span:first-child { font-size: 1.6rem; }
+  .aviso-consulta.pendiente { background: var(--hijos-soft); border-color: var(--hijos); }
+</style>

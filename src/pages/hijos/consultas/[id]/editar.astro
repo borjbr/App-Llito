@@ -1,0 +1,49 @@
+---
+import App from "@/layouts/App.astro";
+import FormConsulta from "@/components/FormConsulta.astro";
+import { and, eq } from "drizzle-orm";
+import { db } from "@/db/client";
+import { consulta } from "@/db/schema";
+import { fechaMadrid } from "@/lib/fechas";
+import { cmAInput, consultaDelHogar, hijoDelHogar, leerFormulario, pesoAInput, validar, type ValoresConsulta } from "@/lib/consultas";
+
+const hogar = Astro.locals.hogar!;
+const c = await consultaDelHogar(hogar.id, Astro.params.id!);
+if (!c) return Astro.redirect("/hijos/consultas", 303);
+const hoy = fechaMadrid();
+const { hijos } = await hijoDelHogar(hogar.id, c.hijoId);
+
+let valores: ValoresConsulta = {
+  hijoId: c.hijoId,
+  fecha: c.fecha,
+  especialidad: c.especialidad ?? "",
+  centro: c.centro ?? "",
+  profesional: c.profesional ?? "",
+  motivo: c.motivo ?? "",
+  peso: pesoAInput(c.pesoGramos),
+  talla: cmAInput(c.tallaMm),
+  perimetro: cmAInput(c.perimetroMm),
+  notas: c.notas ?? "",
+  indicaciones: c.indicaciones ?? "",
+  eventoId: "",
+};
+let errores: Record<string, string> = {};
+
+if (Astro.request.method === "POST") {
+  valores = leerFormulario(await Astro.request.formData());
+  const r = validar(valores, hoy, hijos.map((h) => h.id));
+  errores = r.errores;
+  if (!Object.keys(errores).length) {
+    await db.update(consulta).set({ ...r.datos, updatedAt: new Date() }).where(and(eq(consulta.id, c.id), eq(consulta.hogarId, hogar.id)));
+    return Astro.redirect(`/hijos/consultas/${c.id}?ok=guardada`, 303);
+  }
+}
+---
+
+<App title="Editar consulta">
+  <header class="grid gap-2">
+    <a href={`/hijos/consultas/${c.id}`} class="btn btn-ghost volver"><span aria-hidden="true">←</span> Consulta</a>
+    <h1>Editar consulta</h1>
+  </header>
+  <FormConsulta valores={valores} errores={errores} hijos={hijos} hoy={hoy} textoBoton="Guardar cambios" />
+</App>

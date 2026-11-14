@@ -2,20 +2,34 @@
 import App from "@/layouts/App.astro";
 import { hijosDe } from "@/lib/familia";
 import { db } from "@/db/client";
-import { receta } from "@/db/schema";
-import { count, eq } from "drizzle-orm";
+import { consulta, receta } from "@/db/schema";
+import { count, desc, eq } from "drizzle-orm";
+import { edadEn, formatoPeso, iconoEspecialidad } from "@/lib/consultas";
+import { fechaMadrid, nombreDia } from "@/lib/fechas";
 
 const hogar = Astro.locals.hogar!;
-const [hijos, [{ total }]] = await Promise.all([
+const [hijos, [{ total }], consultas] = await Promise.all([
   hijosDe(hogar.id),
   db.select({ total: count() }).from(receta).where(eq(receta.hogarId, hogar.id)),
+  db
+    .select({ id: consulta.id, hijoId: consulta.hijoId, fecha: consulta.fecha, especialidad: consulta.especialidad, pesoGramos: consulta.pesoGramos })
+    .from(consulta)
+    .where(eq(consulta.hogarId, hogar.id))
+    .orderBy(desc(consulta.fecha)),
 ]);
+const hoy = fechaMadrid();
+const resumenDe = (hijoId: string) => {
+  const suyas = consultas.filter((c) => c.hijoId === hijoId);
+  const ultima = suyas[0];
+  const peso = suyas.find((c) => c.pesoGramos)?.pesoGramos;
+  return { n: suyas.length, ultima, peso };
+};
 ---
 
 <App title="Hijos">
   <header class="grid gap-2">
     <h1 style="color: var(--hijos);">{hijos.length === 1 ? hijos[0].nombre : "Hijos"}</h1>
-    <p class="text-muted">Tomas, comidas, salud y crecimiento. Lo construimos en los próximos pasos.</p>
+    <p class="text-muted">Consultas, crecimiento y recetas.</p>
   </header>
 
   {
@@ -26,17 +40,30 @@ const [hijos, [{ total }]] = await Promise.all([
       </div>
     ) : (
       <ul class="grid gap-3 list-none p-0 m-0">
-        {hijos.map((h) => (
-          <li class="card flex items-center gap-4">
-            <span class="grid place-items-center size-14 shrink-0 rounded-full text-2xl font-bold font-display" style="background: var(--hijos-soft); color: var(--hijos);" aria-hidden="true">
-              {h.nombre.charAt(0).toUpperCase()}
-            </span>
-            <div class="grid gap-1 min-w-0">
-              <h2 class="break-words">{h.nombre}</h2>
-              <p class="text-muted">Tomas y comidas · Salud · Crecimiento</p>
-            </div>
-          </li>
-        ))}
+        {hijos.map((h) => {
+          const r = resumenDe(h.id);
+          const edad = edadEn(h.fechaNacimiento ?? null, hoy);
+          return (
+            <li>
+              <a href={`/hijos/consultas?hijo=${h.id}`} class="tarjeta-hijo">
+                <span class="inicial" aria-hidden="true">{h.nombre.charAt(0).toUpperCase()}</span>
+                <span class="grid gap-1 min-w-0">
+                  <span class="tarjeta-titulo">{h.nombre}{edad && <span class="tarjeta-edad"> · {edad}</span>}</span>
+                  <span class="tarjeta-sub"><span aria-hidden="true">🩺</span> Consultas{r.n > 0 && ` · ${r.n}`}</span>
+                  {r.ultima ? (
+                    <span class="hint">
+                      Última: {iconoEspecialidad(r.ultima.especialidad)} {r.ultima.especialidad ?? "consulta"}, {nombreDia(r.ultima.fecha, hoy).toLowerCase()}
+                      {r.peso && ` · ${formatoPeso(r.peso)}`}
+                    </span>
+                  ) : (
+                    <span class="hint">Apunta peso, talla y lo que os dice el médico.</span>
+                  )}
+                </span>
+                <span class="flecha" aria-hidden="true">→</span>
+              </a>
+            </li>
+          );
+        })}
       </ul>
     )
   }
@@ -54,6 +81,35 @@ const [hijos, [{ total }]] = await Promise.all([
 </App>
 
 <style>
+  .tarjeta-hijo {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.1rem;
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    border: 2px solid var(--line);
+    color: var(--ink);
+    text-decoration: none;
+  }
+  .tarjeta-hijo:hover { border-color: var(--hijos); }
+  .inicial {
+    display: grid;
+    place-items: center;
+    width: 3.5rem;
+    height: 3.5rem;
+    border-radius: 999px;
+    background: var(--hijos-soft);
+    color: var(--hijos);
+    font-family: var(--font-display);
+    font-size: 1.5rem;
+    font-weight: 700;
+  }
+  .tarjeta-titulo { font-family: var(--font-display); font-size: 1.25rem; font-weight: 700; overflow-wrap: anywhere; }
+  .tarjeta-edad { font-family: var(--font-body); font-size: 0.95rem; font-weight: 400; color: var(--muted); }
+  .tarjeta-sub { font-weight: 700; color: var(--hijos); }
+  .flecha { color: var(--hijos); font-size: 1.3rem; font-weight: 700; }
   .recetario {
     display: grid;
     grid-template-columns: auto 1fr auto;

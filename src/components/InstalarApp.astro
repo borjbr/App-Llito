@@ -1,0 +1,111 @@
+---
+/**
+ * Ayuda para instalar la app en el móvil. Se muestra solo si no está ya instalada.
+ * - Android/Chrome/Edge: botón «Instalar» que abre el diálogo del sistema.
+ * - iPhone/iPad (Safari no deja instalar desde la web): pasos con Compartir.
+ * - Otros: indicación genérica del menú del navegador.
+ * `cerrable`: en Inicio se puede ocultar con «Ahora no» (se recuerda en este móvil).
+ */
+interface Props {
+  cerrable?: boolean;
+}
+const { cerrable = false } = Astro.props;
+---
+
+<section class="instalar" data-instalar data-cerrable={cerrable ? "si" : undefined} hidden aria-labelledby="instalar-titulo">
+  <img src="/iconos/icono-192.png" alt="" width="48" height="48" class="instalar-icono" />
+  <div class="grid gap-2 min-w-0">
+    <h2 id="instalar-titulo" class="instalar-titulo">Ten la app en tu móvil</h2>
+    <p class="instalar-texto" data-texto-android hidden>Instálala y se abrirá como una app más, a pantalla completa y desde su icono.</p>
+    <div data-texto-ios hidden>
+      <p class="instalar-texto">Se abrirá como una app más, con su icono. En Safari:</p>
+      <ol class="pasos">
+        <li>
+          Toca <strong>Compartir</strong>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="ico-compartir"><path d="M12 15V3M8 7l4-4 4 4" /><path d="M6 11H5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-1" /></svg>
+          abajo.
+        </li>
+        <li>Elige <strong>Añadir a pantalla de inicio</strong>.</li>
+        <li>Toca <strong>Añadir</strong>.</li>
+      </ol>
+    </div>
+    <p class="instalar-texto" data-texto-otro hidden>En el menú del navegador, elige <strong>Instalar app</strong> o <strong>Añadir a pantalla de inicio</strong>.</p>
+    <div class="flex gap-2 flex-wrap">
+      <button type="button" class="btn btn-primary" data-boton-instalar hidden>Instalar</button>
+      {cerrable && <button type="button" class="btn btn-ghost" data-ahora-no>Ahora no</button>}
+    </div>
+  </div>
+</section>
+<p class="instalada hint" data-instalada hidden><span aria-hidden="true">✅</span> Estás usando la app instalada.</p>
+
+<script>
+  type Aviso = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> };
+  const w = window as unknown as { __instalar?: Aviso };
+  const instalada = matchMedia("(display-mode: standalone)").matches || (navigator as unknown as { standalone?: boolean }).standalone === true;
+  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const movil = /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent) || ios;
+
+  document.querySelectorAll<HTMLElement>("[data-instalar]").forEach((caja) => {
+    const cerrable = caja.dataset.cerrable === "si";
+    const marcaInstalada = caja.nextElementSibling as HTMLElement | null;
+    if (instalada) {
+      if (!cerrable && marcaInstalada?.matches("[data-instalada]")) marcaInstalada.hidden = false;
+      return;
+    }
+    try {
+      if (cerrable && localStorage.getItem("instalar-oculto") === "1") return;
+    } catch {}
+    // En Inicio solo se sugiere en el móvil; en Mi perfil, siempre
+    if (cerrable && !movil) return;
+
+    const boton = caja.querySelector<HTMLButtonElement>("[data-boton-instalar]")!;
+    const mostrar = (cual: "android" | "ios" | "otro") => {
+      caja.querySelectorAll<HTMLElement>("[data-texto-android],[data-texto-ios],[data-texto-otro]").forEach((el) => (el.hidden = true));
+      caja.querySelector<HTMLElement>(`[data-texto-${cual}]`)!.hidden = false;
+      boton.hidden = cual !== "android";
+      caja.hidden = false;
+    };
+
+    if (w.__instalar) mostrar("android");
+    else if (ios) mostrar("ios");
+    else if (!cerrable) mostrar("otro");
+    addEventListener("llito:instalable", () => mostrar("android"));
+
+    boton.addEventListener("click", async () => {
+      const aviso = w.__instalar;
+      if (!aviso) return;
+      await aviso.prompt();
+      const { outcome } = await aviso.userChoice;
+      w.__instalar = undefined;
+      if (outcome === "accepted") caja.hidden = true;
+    });
+    caja.querySelector("[data-ahora-no]")?.addEventListener("click", () => {
+      caja.hidden = true;
+      try {
+        localStorage.setItem("instalar-oculto", "1");
+      } catch {}
+    });
+  });
+  addEventListener("appinstalled", () => document.querySelectorAll<HTMLElement>("[data-instalar]").forEach((c) => (c.hidden = true)));
+</script>
+
+<style>
+  .instalar {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0.9rem;
+    align-items: start;
+    padding: 1rem;
+    border-radius: var(--radius-lg);
+    background: var(--accent-soft);
+    border: 1px solid var(--line);
+  }
+  .instalar[hidden] { display: none; }
+  .instalar-icono { width: 48px; height: 48px; border-radius: 12px; }
+  .instalar-titulo { font-size: 1.1rem; }
+  .instalar-texto { color: var(--muted); font-size: 0.95rem; }
+  .pasos { list-style: decimal; margin: 0.35rem 0 0; padding-left: 1.4rem; display: grid; gap: 0.3rem; font-size: 0.95rem; }
+  .ico-compartir { display: inline-block; width: 1.15rem; height: 1.15rem; vertical-align: -0.2rem; color: var(--accent); }
+  .instalada[hidden] { display: none; }
+  .instalada { text-align: center; }
+</style>

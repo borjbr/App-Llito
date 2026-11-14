@@ -1,6 +1,7 @@
 ---
 import App from "@/layouts/App.astro";
 import { VERSION } from "@/lib/version";
+import InstalarApp from "@/components/InstalarApp.astro";
 import CamposPerfil from "@/components/CamposPerfil.astro";
 import CampoHijos from "@/components/CampoHijos.astro";
 import ResumenErrores from "@/components/ResumenErrores.astro";
@@ -123,6 +124,8 @@ guardado = Astro.url.searchParams.has("guardado") && Astro.request.method === "G
     </span>
     <span aria-hidden="true" class="text-xl font-bold" style="color: var(--accent);">→</span>
   </a>
+
+  <InstalarApp />
 
   <form method="post" action="/salir" class="grid">
     <button class="btn btn-danger btn-block" type="submit">Cerrar sesión</button>
