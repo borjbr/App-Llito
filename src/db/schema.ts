@@ -113,6 +113,8 @@ export const hijo = sqliteTable(
       .references(() => hogar.id, { onDelete: "cascade" }),
     nombre: text("nombre").notNull(),
     orden: integer("orden").notNull().default(0),
+    /** YYYY-MM-DD; opcional, para mostrar la edad en cada consulta */
+    fechaNacimiento: text("fecha_nacimiento"),
     ...timestamps,
   },
   (t) => [index("hijo_hogar_idx").on(t.hogarId)],
@@ -396,6 +398,48 @@ export const restaurante = sqliteTable(
   (t) => [index("restaurante_hogar_idx").on(t.hogarId, t.visitadoEn)],
 );
 
+/* ── Consultas médicas ─────────────────────────────────────────────────── */
+
+/**
+ * Lo que pasó en una visita al médico: medidas, lo que dijeron y qué hacer
+ * después. Las medidas se guardan en enteros (gramos y milímetros) para no
+ * arrastrar decimales; se muestran en kg y cm.
+ */
+export const consulta = sqliteTable(
+  "consulta",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    hogarId: text("hogar_id")
+      .notNull()
+      .references(() => hogar.id, { onDelete: "cascade" }),
+    hijoId: text("hijo_id")
+      .notNull()
+      .references(() => hijo.id, { onDelete: "cascade" }),
+    /** Cita de la agenda de la que sale, si la hay */
+    eventoId: text("evento_id").references(() => evento.id, { onDelete: "set null" }),
+    /** Día de la consulta (YYYY-MM-DD, hora de Madrid) */
+    fecha: text("fecha").notNull(),
+    /** Pediatría, Neurología… */
+    especialidad: text("especialidad"),
+    centro: text("centro"),
+    profesional: text("profesional"),
+    motivo: text("motivo"),
+    pesoGramos: integer("peso_gramos"),
+    tallaMm: integer("talla_mm"),
+    perimetroMm: integer("perimetro_mm"),
+    /** Lo que dijeron */
+    notas: text("notas"),
+    /** Tratamiento, pruebas, próxima revisión… */
+    indicaciones: text("indicaciones"),
+    creadoPor: text("creado_por").references(() => user.id, { onDelete: "set null" }),
+    ...timestamps,
+  },
+  (t) => [index("consulta_hijo_idx").on(t.hijoId, t.fecha), index("consulta_hogar_idx").on(t.hogarId)],
+);
+
+export type Consulta = typeof consulta.$inferSelect;
 export type ProductoCompra = typeof productoCompra.$inferSelect;
 export type Restaurante = typeof restaurante.$inferSelect;
 export type JornadaLimpieza = typeof jornadaLimpieza.$inferSelect;

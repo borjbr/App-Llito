@@ -10,7 +10,8 @@ import { tool, type UIMessage } from "ai";
 import { z } from "zod";
 import { and, asc, count, desc, eq, gte, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
-import { CATEGORIAS_ALIMENTO, memoria, mensajeChat, productoCompra } from "@/db/schema";
+import { CATEGORIAS_ALIMENTO, consulta, hijo, memoria, mensajeChat, productoCompra } from "@/db/schema";
+import { formatoCm, formatoPeso } from "./consultas";
 import { hijosDe, miembrosDe } from "./familia";
 import { fechaLarga, fechaMadrid } from "./fechas";
 import { normalizar, textoEdad } from "./alimentos";
@@ -76,6 +77,10 @@ ${c.memorias.length ? c.memorias.map((m) => `- id: ${m.id} · ${m.texto}`).join(
 - Si algo deja de ser cierto, llama a olvidar con el id antiguo y, si procede, recordar con el dato nuevo.
 - Usa estos datos para personalizar respuestas y recetas (por ejemplo, evita alimentos que no le sientan bien).
 - No guardes contraseñas, números de documentos ni datos bancarios.
+
+# Consultas médicas
+- La familia apunta cada visita al médico en Hijos → Consultas (/hijos/consultas): medidas, lo que dijeron e indicaciones.
+- Para preguntas sobre lo que dijo un médico, medidas o tratamientos, usa buscar_consultas y responde con la fecha y la especialidad. No interpretes diagnósticos: repite lo apuntado y, ante dudas de salud, remite al pediatra.
 
 # Lista de la compra
 - La familia tiene una lista de la compra compartida en Hogar → Lista de la compra (/hogar/compra).
@@ -177,6 +182,42 @@ export function herramientas(ctx: { hogarId: string; userId: string }) {
         if (total >= MAX_MEMORIAS) return { error: `La memoria está llena (${MAX_MEMORIAS} datos). Pide que borren alguno desde la página del asistente.` };
         const [fila] = await db.insert(memoria).values({ hogarId: ctx.hogarId, texto: limpio, creadoPor: ctx.userId }).returning();
         return { id: fila.id, texto: fila.texto };
+      },
+    }),
+
+    buscar_consultas: tool({
+      description:
+        "Busca en las consultas médicas apuntadas de los hijos (especialidad, centro, medidas, lo que dijeron y las indicaciones). Úsala para preguntas como «¿qué nos dijo el neurólogo?» o «¿cuánto pesaba en la última revisión?».",
+      inputSchema: z.object({
+        texto: textoOpcional("Palabra a buscar: especialidad, medicamento, centro… Vacío para las últimas."),
+      }),
+      execute: async ({ texto }) => {
+        const filas = await db
+          .select({ c: consulta, nombre: hijo.nombre })
+          .from(consulta)
+          .innerJoin(hijo, eq(hijo.id, consulta.hijoId))
+          .where(eq(consulta.hogarId, ctx.hogarId))
+          .orderBy(desc(consulta.fecha))
+          .limit(60);
+        const t = texto ? normalizar(texto) : "";
+        const encontradas = filas
+          .filter(({ c }) => !t || [c.especialidad, c.centro, c.profesional, c.motivo, c.notas, c.indicaciones].some((x) => x && normalizar(x).includes(t)))
+          .slice(0, 8)
+          .map(({ c, nombre }) => ({
+            hijo: nombre,
+            fecha: c.fecha,
+            especialidad: c.especialidad,
+            centro: c.centro,
+            profesional: c.profesional,
+            motivo: c.motivo,
+            peso: c.pesoGramos ? formatoPeso(c.pesoGramos) : null,
+            talla: c.tallaMm ? formatoCm(c.tallaMm) : null,
+            perimetroCraneal: c.perimetroMm ? formatoCm(c.perimetroMm) : null,
+            notas: c.notas,
+            indicaciones: c.indicaciones,
+            enlace: `/hijos/consultas/${c.id}`,
+          }));
+        return { consultas: encontradas, total: filas.length };
       },
     }),
 

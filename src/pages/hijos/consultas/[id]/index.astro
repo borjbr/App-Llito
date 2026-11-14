@@ -1,0 +1,129 @@
+---
+import App from "@/layouts/App.astro";
+import { and, eq } from "drizzle-orm";
+import { db } from "@/db/client";
+import { consulta, evento, hijo } from "@/db/schema";
+import { fechaLarga } from "@/lib/fechas";
+import { consultaDelHogar, consultasDe, diferencia, edadEn, formatoCm, formatoPeso, iconoEspecialidad } from "@/lib/consultas";
+
+const hogar = Astro.locals.hogar!;
+const c = await consultaDelHogar(hogar.id, Astro.params.id!);
+if (!c) return Astro.redirect("/hijos/consultas", 303);
+
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  if (form.get("accion") === "borrar") {
+    await db.delete(consulta).where(and(eq(consulta.id, c.id), eq(consulta.hogarId, hogar.id)));
+    return Astro.redirect(`/hijos/consultas?hijo=${c.hijoId}&ok=borrada`, 303);
+  }
+}
+
+const [[h], todas, [cita]] = await Promise.all([
+  db.select().from(hijo).where(eq(hijo.id, c.hijoId)),
+  consultasDe(hogar.id, c.hijoId),
+  c.eventoId ? db.select({ id: evento.id, titulo: evento.titulo }).from(evento).where(eq(evento.id, c.eventoId)) : Promise.resolve([]),
+]);
+// Consulta anterior con cada medida, para la diferencia
+const anteriores = todas.filter((x) => x.fecha < c.fecha || (x.fecha === c.fecha && x.createdAt < c.createdAt));
+const previa = (k: "pesoGramos" | "tallaMm" | "perimetroMm") => anteriores.find((x) => x[k] != null);
+const MEDIDAS = [
+  { k: "pesoGramos" as const, nombre: "Peso", icono: "⚖️", fmt: formatoPeso, tipo: "peso" as const },
+  { k: "tallaMm" as const, nombre: "Talla", icono: "📏", fmt: formatoCm, tipo: "cm" as const },
+  { k: "perimetroMm" as const, nombre: "Cabeza", icono: "🧒", fmt: formatoCm, tipo: "cm" as const },
+].filter((m) => c[m.k] != null);
+const edad = edadEn(h?.fechaNacimiento ?? null, c.fecha);
+const ok = { creada: "Consulta guardada.", guardada: "Cambios guardados." }[Astro.url.searchParams.get("ok") ?? ""];
+const fecha = fechaLarga(c.fecha);
+const fmtCorta = new Intl.DateTimeFormat("es-ES", { day: "numeric", month: "short", timeZone: "UTC" });
+const corta = (f: string) => fmtCorta.format(new Date(`${f}T12:00:00Z`)).replace(".", "");
+---
+
+<App title={`${c.especialidad ?? "Consulta"} · ${fecha}`}>
+  <header class="grid gap-2">
+    <a href={`/hijos/consultas?hijo=${c.hijoId}`} class="btn btn-ghost volver"><span aria-hidden="true">←</span> Consultas</a>
+    <p class="text-muted first-letter:uppercase">{fecha}{edad && ` · ${h?.nombre} tenía ${edad}`}</p>
+    <h1 class="break-words"><span aria-hidden="true">{iconoEspecialidad(c.especialidad)} </span>{c.especialidad ?? "Consulta"}</h1>
+    {(c.centro || c.profesional) && <p class="text-muted">{[c.centro, c.profesional].filter(Boolean).join(" · ")}</p>}
+  </header>
+
+  {ok && <div class="alert alert-ok" role="status"><p>{ok}</p></div>}
+
+  {c.motivo && <p class="motivo"><strong>Motivo:</strong> {c.motivo}</p>}
+
+  {
+    MEDIDAS.length > 0 && (
+      <ul class="medidas" aria-label="Medidas">
+        {MEDIDAS.map((m) => {
+          const p = previa(m.k);
+          return (
+            <li class="medida">
+              <span class="medida-nombre"><span aria-hidden="true">{m.icono}</span> {m.nombre}</span>
+              <strong class="num">{m.fmt(c[m.k]!)}</strong>
+              {p ? (
+                <span class="medida-detalle num">
+                  <strong class="dif">{diferencia(c[m.k]!, p[m.k]!, m.tipo)}</strong>
+                  <span>desde el {corta(p.fecha)}</span>
+                </span>
+              ) : (
+                <span class="medida-detalle">Primera medida</span>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    )
+  }
+
+  {
+    c.notas && (
+      <section class="card bloque" aria-labelledby="t-notas">
+        <h2 id="t-notas">Qué os dijeron</h2>
+        <p class="texto">{c.notas}</p>
+      </section>
+    )
+  }
+  {
+    c.indicaciones && (
+      <section class="card bloque indicaciones" aria-labelledby="t-ind">
+        <h2 id="t-ind"><span aria-hidden="true">📋</span> Tratamiento y próximos pasos</h2>
+        <p class="texto">{c.indicaciones}</p>
+      </section>
+    )
+  }
+  {!c.notas && !c.indicaciones && MEDIDAS.length === 0 && <p class="text-muted">No hay nada más apuntado. Puedes completarla editándola.</p>}
+
+  {cita && <a href={`/agenda/${cita.id}`} class="cita"><span aria-hidden="true">📅</span> Cita en la agenda: {cita.titulo} <span aria-hidden="true">→</span></a>}
+
+  <div class="acciones">
+    <a href={`/hijos/consultas/${c.id}/editar`} class="btn btn-secondary">Editar</a>
+    <form method="post" data-confirmar="¿Borrar esta consulta? No se puede deshacer.">
+      <input type="hidden" name="accion" value="borrar" />
+      <button class="btn btn-ghost" type="submit" style="color: var(--danger);">Borrar</button>
+    </form>
+  </div>
+</App>
+
+<script>
+  document.querySelectorAll<HTMLFormElement>("form[data-confirmar]").forEach((f) =>
+    f.addEventListener("submit", (e) => {
+      if (!confirm(f.dataset.confirmar!)) e.preventDefault();
+    }),
+  );
+</script>
+
+<style>
+  .motivo { font-size: 1rem; }
+  .medidas { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.5rem; }
+  .medida { display: grid; gap: 0.1rem; align-content: start; padding: 0.7rem 0.6rem; border-radius: var(--radius-lg); background: var(--hijos-soft); }
+  .medida-detalle { display: grid; line-height: 1.25; }
+  .dif { font-size: 0.85rem; color: var(--ink); }
+  .medida-nombre { font-size: 0.8rem; font-weight: 700; color: var(--muted); }
+  .medida > strong { font-family: var(--font-display); font-size: clamp(1.05rem, 4.8vw, 1.3rem); color: var(--hijos); white-space: nowrap; }
+  .medida-detalle { font-size: 0.78rem; color: var(--muted); }
+  .bloque { display: grid; gap: 0.5rem; padding: 1rem; }
+  .bloque h2 { font-size: 1.1rem; }
+  .texto { white-space: pre-line; overflow-wrap: anywhere; line-height: 1.55; }
+  .indicaciones { border-left: 4px solid var(--hijos); }
+  .cita { display: flex; align-items: center; gap: 0.5rem; min-height: 44px; font-weight: 700; text-decoration: none; }
+  .acciones { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+</style>

@@ -104,6 +104,7 @@ function pintarParte(p: Parte): HTMLElement | null {
     return nota;
   }
   if (nombre === "ver_lista_compra") return listo ? null : trabajando("Mirando la lista de la compra…");
+  if (nombre === "buscar_consultas") return listo ? null : trabajando("Mirando las consultas…");
   if (nombre === "buscar_recetas") return listo ? null : trabajando("Buscando en el recetario…");
   return null;
 }

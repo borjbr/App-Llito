@@ -1,0 +1,87 @@
+---
+import App from "@/layouts/App.astro";
+import FormConsulta from "@/components/FormConsulta.astro";
+import { and, eq } from "drizzle-orm";
+import { db } from "@/db/client";
+import { consulta, evento } from "@/db/schema";
+import { fechaMadrid } from "@/lib/fechas";
+import { ESPECIALIDADES, hijoDelHogar, leerFormulario, validar, type ValoresConsulta } from "@/lib/consultas";
+import { normalizar } from "@/lib/alimentos";
+
+const usuario = Astro.locals.user!;
+const hogar = Astro.locals.hogar!;
+const hoy = fechaMadrid();
+const { hijos, actual } = await hijoDelHogar(hogar.id, Astro.url.searchParams.get("hijo"));
+if (!actual) return Astro.redirect("/hijos", 303);
+
+let valores: ValoresConsulta = {
+  hijoId: actual.id,
+  fecha: hoy,
+  especialidad: "",
+  centro: "",
+  profesional: "",
+  motivo: "",
+  peso: "",
+  talla: "",
+  perimetro: "",
+  notas: "",
+  indicaciones: "",
+  eventoId: "",
+};
+let errores: Record<string, string> = {};
+const motivoDe = (titulo: string) => {
+  const tras = titulo.split(":").slice(1).join(":").trim();
+  if (tras) return tras.charAt(0).toUpperCase() + tras.slice(1);
+  return titulo.trim().split(/\s+/).length > 2 ? titulo : "";
+};
+
+// Desde una cita de la agenda: rellenar día, especialidad, lugar y para quién
+const idEvento = Astro.url.searchParams.get("evento");
+if (idEvento && Astro.request.method === "GET") {
+  const [e] = await db.select().from(evento).where(and(eq(evento.id, idEvento), eq(evento.hogarId, hogar.id)));
+  if (e) {
+    const titulo = normalizar(e.titulo);
+    const esp =
+      ESPECIALIDADES.find((x) => titulo.includes(normalizar(x).slice(0, 6))) ?? (e.tipo === "vacuna" ? "Vacunas" : titulo.includes("pediatr") ? "Pediatría" : "");
+    valores = {
+      ...valores,
+      hijoId: e.hijoId && hijos.some((h) => h.id === e.hijoId) ? e.hijoId : valores.hijoId,
+      fecha: e.fecha && e.fecha <= hoy ? e.fecha : hoy,
+      especialidad: esp,
+      centro: e.ubicacion ?? "",
+      // «Pediatra: revisión de los 6 meses» → motivo «Revisión de los 6 meses»; «Neurología» → sin motivo
+      motivo: motivoDe(e.titulo),
+      eventoId: e.id,
+    };
+  }
+}
+
+if (Astro.request.method === "POST") {
+  valores = leerFormulario(await Astro.request.formData());
+  const r = validar(valores, hoy, hijos.map((h) => h.id));
+  errores = r.errores;
+  if (!Object.keys(errores).length) {
+    // El evento solo se enlaza si es del hogar
+    let eventoId: string | null = null;
+    if (valores.eventoId) {
+      const [e] = await db.select({ id: evento.id }).from(evento).where(and(eq(evento.id, valores.eventoId), eq(evento.hogarId, hogar.id)));
+      eventoId = e?.id ?? null;
+    }
+    const ahora = new Date();
+    const [nueva] = await db
+      .insert(consulta)
+      .values({ ...r.datos, hogarId: hogar.id, eventoId, creadoPor: usuario.id, createdAt: ahora, updatedAt: ahora })
+      .returning({ id: consulta.id });
+    return Astro.redirect(`/hijos/consultas/${nueva.id}?ok=creada`, 303);
+  }
+}
+---
+
+<App title="Nueva consulta">
+  <header class="grid gap-2">
+    <a href={`/hijos/consultas?hijo=${actual.id}`} class="btn btn-ghost volver"><span aria-hidden="true">←</span> Consultas</a>
+    <h1>Nueva consulta</h1>
+    {valores.eventoId && <p class="text-muted">Rellenada con los datos de la cita de la agenda.</p>}
+  </header>
+  <FormConsulta valores={valores} errores={errores} hijos={hijos} hoy={hoy} textoBoton="Guardar consulta" />
+</App>
