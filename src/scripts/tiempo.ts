@@ -32,12 +32,15 @@ function pintar(el: HTMLElement, t: Tiempo) {
   icono.textContent = t.icono;
   const datos = document.createElement("span");
   datos.className = "tiempo-datos";
+  const linea = document.createElement("span");
+  linea.className = "tiempo-linea";
   const grados = document.createElement("strong");
   grados.textContent = `${Math.round(t.actual)}°`;
+  linea.append(grados, ` ${t.texto}`);
   const detalle = document.createElement("span");
   detalle.className = "tiempo-detalle";
-  detalle.textContent = `${t.texto} · ${Math.round(t.min)}° / ${Math.round(t.max)}°${t.lluvia >= 30 ? ` · ☔ ${t.lluvia}%` : ""}`;
-  datos.append(grados, detalle);
+  detalle.textContent = `Mín ${Math.round(t.min)}° · Máx ${Math.round(t.max)}°${t.lluvia >= 30 ? ` · ☔\u00a0${t.lluvia}%` : ""}`;
+  datos.append(linea, detalle);
   el.append(icono, datos);
   el.setAttribute("aria-label", `Tiempo en ${t.nombre}: ${t.texto}, ${Math.round(t.actual)} grados, mínima ${Math.round(t.min)} y máxima ${Math.round(t.max)}`);
   el.title = `Tiempo en ${t.nombre}`;

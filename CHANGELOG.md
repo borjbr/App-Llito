@@ -2,6 +2,17 @@
 
 Cada versión lleva número (mayor.menor.parche) y fecha. Esta página se muestra en la app en /novedades.
 
+## 1.3.1 — 2026-11-14
+
+- Revisión completa en el móvil: ninguna pantalla se sale ya por los lados (antes Inicio se desplazaba a 360 px).
+- Arreglado el formulario de recetas: los ingredientes se veían apretados en una columna estrecha.
+- En el chat, el botón de enviar vuelve a estar junto al micrófono.
+- En la agenda, las horas de inicio y fin caben en la tarjeta.
+- Todos los botones y enlaces tienen al menos 44 px de alto para tocarlos con el dedo.
+- Las filas que se desplazan de lado (filtros de agenda, pelis) se difuminan al final para indicar que hay más.
+- El tiempo de Inicio se lee en dos líneas y el saludo se ajusta al ancho del móvil.
+- En Android, el teclado ya no tapa el campo del chat.
+
 ## 1.3.0 — 2026-11-13
 
 - Kissbell escucha: botón de micrófono en el chat y en Inicio. Al terminar de hablar, se envía solo.

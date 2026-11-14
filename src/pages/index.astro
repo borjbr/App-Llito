@@ -103,7 +103,7 @@ const textoHijos =
       </span>
       <div class="min-w-0">
         <p class="text-muted first-letter:uppercase">{fecha}</p>
-        <h1>{saludo}, {user.name}</h1>
+        <h1 class="saludo">{saludo}, {user.name}</h1>
       </div>
     </div>
     <span class="tiempo" data-tiempo hidden role="img" aria-label="Tiempo de hoy"></span>
@@ -159,7 +159,7 @@ const textoHijos =
   <section aria-labelledby="sec-proximo" class="grid gap-3">
     <div class="flex items-baseline justify-between gap-2">
       <h2 id="sec-proximo">Próximos 10 días</h2>
-      <a href="/agenda" class="font-bold">Ver agenda</a>
+      <a href="/agenda" class="font-bold enlace-tap">Ver agenda</a>
     </div>
     {
       diasPrevision.length > 0 ? (
@@ -215,7 +215,7 @@ const textoHijos =
         id="llito-q"
         name="q"
         class="llito-input"
-        placeholder={bebe ? `¿Qué le preparo hoy a ${bebe}?` : "¿En qué te ayudo hoy?"}
+        placeholder="Pregúntale algo…"
         maxlength="2000"
         required
         autocomplete="off"
@@ -282,7 +282,7 @@ const textoHijos =
   </section>
   </div>
   </div>
-  <p class="version"><a href="/novedades">App-Llito v{VERSION} · Novedades</a></p>
+  <p class="version"><a href="/novedades" class="enlace-tap">App-Llito v{VERSION} · Novedades</a></p>
 </App>
 
 <script>
@@ -314,12 +314,13 @@ const textoHijos =
 </script>
 
 <style>
-  .inicio { display: grid; gap: 1.5rem; }
+  .saludo { font-size: clamp(1.55rem, 7.2vw, 2.2rem); line-height: 1.1; }
+  .inicio { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.5rem; }
   .secciones-grid { list-style: none; margin: 0; padding: 0; display: grid; gap: 1rem; }
   @media (min-width: 640px) and (max-width: 1023px) { .secciones-grid { grid-template-columns: 1fr 1fr; } }
-  .inicio-col { display: grid; gap: 1.5rem; align-content: start; min-width: 0; }
+  .inicio-col { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.5rem; align-content: start; min-width: 0; }
   @media (min-width: 1024px) {
-    .inicio { grid-template-columns: 1.1fr 1fr; gap: 2rem; align-items: start; }
+    .inicio { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 2rem; align-items: start; }
     .inicio-col:last-child { position: sticky; top: 5.5rem; }
   }
   .aviso-proximo {
@@ -384,6 +385,7 @@ const textoHijos =
   .aviso-cerrar svg { width: 1.2rem; height: 1.2rem; }
   .llito {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: 0.9rem;
     padding: 1.25rem;
     border-radius: var(--radius-lg);
@@ -404,6 +406,7 @@ const textoHijos =
     font-size: 1.5rem;
     box-shadow: 0 2px 10px rgb(0 0 0 / 0.06);
   }
+  .llito h2 { font-size: clamp(1.15rem, 5.2vw, 1.4rem); }
   .llito-sub { color: var(--muted); font-size: 0.92rem; }
   .llito-form {
     display: grid;
@@ -478,14 +481,16 @@ const textoHijos =
     border: 1px solid var(--line);
     color: var(--ink);
     text-decoration: none;
-    white-space: nowrap;
     justify-self: start;
+    max-width: 100%;
   }
   .tiempo[hidden] { display: none; }
-  .tiempo-icono { font-size: 1.6rem; line-height: 1; }
-  .tiempo-datos { display: flex; align-items: baseline; gap: 0.5rem; line-height: 1.15; }
-  .tiempo-datos strong { font-family: var(--font-display); font-size: 1.2rem; }
-  .tiempo-detalle { font-size: 0.85rem; color: var(--muted); }
+  .tiempo :global(.tiempo-icono) { font-size: 1.6rem; line-height: 1; }
+  .tiempo :global(.tiempo-datos) { display: grid; gap: 0.1rem; line-height: 1.2; min-width: 0; }
+  .tiempo :global(.tiempo-linea) { font-weight: 600; }
+  .tiempo :global(.tiempo-datos strong) { font-family: var(--font-display); font-size: 1.2rem; }
+  .tiempo { border-radius: var(--radius-lg); padding: 0.5rem 0.9rem 0.5rem 0.6rem; }
+  .tiempo :global(.tiempo-detalle) { font-size: 0.85rem; color: var(--muted); }
 
   /* Previsión a 10 días */
   .prevision { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.6rem; }
@@ -539,7 +544,7 @@ const textoHijos =
   .llito-chips a {
     display: inline-flex;
     align-items: center;
-    min-height: 2.5rem;
+    min-height: 44px;
     padding: 0.3rem 0.85rem;
     border-radius: 999px;
     background: var(--surface);
@@ -555,7 +560,7 @@ const textoHijos =
     justify-content: space-between;
     align-items: center;
     gap: 0.5rem;
-    min-height: 2.5rem;
+    min-height: 44px;
     font-weight: 700;
     font-size: 0.92rem;
     text-decoration: none;

@@ -311,7 +311,7 @@ export function iniciarChat(raiz: HTMLElement) {
       },
       alTexto: (t) => enviar(t),
       alEstado: (e, detalle) => {
-        campo!.placeholder = e === "escuchando" ? "Te escucho…" : "Pregúntale lo que quieras…";
+        campo!.placeholder = e === "escuchando" ? "Te escucho…" : "Escribe o dicta…";
         if (e === "error" && detalle) {
           campo!.value = "";
           anunciar(detalle);
